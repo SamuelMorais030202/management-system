@@ -12,7 +12,7 @@ interface FilterBarProps {
     preparoPausado: number
     preparoCancelado: number
     preparoFinalizado: number
-    atrasado: number // Added atrasado count
+    preparoEmAtraso: number // Added atrasado count
   }
 }
 
@@ -22,7 +22,7 @@ export function FilterBar({ activeFilter, onFilterChange, counts }: FilterBarPro
     { id: "preparoAguardandoProducao", label: "AGUARDANDO", count: counts.preparoAguardandoProducao },
     { id: "preparoEmProducao", label: "EM PRODUÇÃO", count: counts.preparoEmProducao },
     { id: "preparoPausado", label: "PAUSADO", count: counts.preparoPausado },
-    { id: "atrasado", label: "ATRASADOS", count: counts.atrasado },
+    { id: "preparoEmAtraso", label: "ATRASADOS", count: counts.preparoEmAtraso },
     { id: "preparoCancelado", label: "CANCELADO", count: counts.preparoCancelado },
     { id: "preparoFinalizado", label: "FINALIZADO", count: counts.preparoFinalizado },
   ]
@@ -34,7 +34,7 @@ export function FilterBar({ activeFilter, onFilterChange, counts }: FilterBarPro
           key={filter.id}
           onClick={() => onFilterChange(filter.id)}
           className={cn(
-            "relative whitespace-nowrap pb-1 text-xs font-medium transition-colors sm:text-sm",
+            "relative whitespace-nowrap pb-1 text-xs font-medium transition-colors sm:text-sm cursor-pointer",
             activeFilter === filter.id ? "text-foreground" : "text-muted-foreground hover:text-foreground",
           )}
         >

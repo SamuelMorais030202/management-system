@@ -1,329 +1,169 @@
-"use client"
-
-import { useState, useEffect } from "react"
-import { Search, Menu } from "lucide-react"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { OrderCard } from "@/components/order-card"
-import { FilterBar } from "@/components/filter-bar"
-import { LocationSelectorModal, type Location } from "@/components/location-selector-modal"
-
-export interface Order {
-  id: string
-  customer: string
-  location: string
-  dueTime: string
-  status:
-    | "preparoAguardandoProducao"
-    | "preparoEmProducao"
-    | "preparoCancelado"
-    | "preparoPausado"
-    | "preparoFinalizado"
-  items: OrderItem[]
-  timer: string
-  isFinishing: boolean
-  atrasado?: boolean // Field to mark delayed orders
+export const metadata = {
+  title: 'Início',
 }
-
-export interface OrderItem {
-  quantity: number
-  name: string
-  modifiers?: string[]
-}
-
-// Mock data for orders
-const mockOrders: Order[] = [
-  {
-    id: "329",
-    customer: "Samir Thai",
-    location: "Retirada",
-    dueTime: "23:33",
-    status: "preparoCancelado" as const,
-    items: [
-      { quantity: 1, name: "Sopa de Missô com Camarão" },
-      { quantity: 1, name: "California Roll de Caranguejo", modifiers: ["Arroz Branco Premium", "Molho Picante"] },
-      { quantity: 1, name: "Sanduíche de Gyro de Carne", modifiers: ["Tomate", "Hummus 1 Porção"] },
-      { quantity: 1, name: "Salada Vegana" },
-    ],
-    timer: "00:18:00",
-    isFinishing: true,
-    atrasado: true, // Example delayed order
-  },
-  {
-    id: "330",
-    customer: "Amazonbwls",
-    location: "Retirada",
-    dueTime: "23:33",
-    status: "preparoEmProducao" as const,
-    items: [
-      { quantity: 1, name: "Sopa de Missô com Camarão" },
-      { quantity: 1, name: "California Roll de Caranguejo", modifiers: ["Arroz Branco Premium", "Molho Picante"] },
-      { quantity: 1, name: "Sanduíche de Gyro de Carne", modifiers: ["Tomate", "Hummus 1 Porção"] },
-      { quantity: 1, name: "Salada Vegana" },
-    ],
-    timer: "00:12:00",
-    isFinishing: true,
-    atrasado: false,
-  },
-  {
-    id: "331",
-    customer: "Mema Mizushi",
-    location: "Retirada",
-    dueTime: "23:33",
-    status: "preparoEmProducao" as const,
-    items: [
-      { quantity: 1, name: "Sopa de Missô com Camarão" },
-      { quantity: 1, name: "California Roll de Caranguejo", modifiers: ["Arroz Branco Premium", "Molho Picante"] },
-      { quantity: 1, name: "Sanduíche de Gyro de Carne", modifiers: ["Tomate", "Hummus 1 Porção"] },
-      { quantity: 1, name: "Salada Vegana" },
-    ],
-    timer: "00:05:00",
-    isFinishing: true,
-    atrasado: true, // Example delayed order
-  },
-  {
-    id: "332",
-    customer: "Bad Ass Breakfast",
-    location: "Retirada",
-    dueTime: "23:44",
-    status: "preparoAguardandoProducao" as const,
-    items: [
-      { quantity: 1, name: "California Roll de Caranguejo", modifiers: ["Arroz Branco Premium", "Molho Picante"] },
-      { quantity: 1, name: "Salada Vegana" },
-      { quantity: 1, name: "Sopa de Missô com Camarão" },
-    ],
-    timer: "00:00:00",
-    isFinishing: false,
-    atrasado: false,
-  },
-  {
-    id: "333465882",
-    customer: "The Halal Guys",
-    location: "Retirada",
-    dueTime: "11:45",
-    status: "preparoAguardandoProducao" as const,
-    items: [
-      { quantity: 1, name: "Sopa de Missô com Camarão" },
-      { quantity: 1, name: "California Roll de Caranguejo", modifiers: ["Arroz Branco Premium", "Molho Picante"] },
-      { quantity: 1, name: "Sanduíche de Gyro de Carne", modifiers: ["Tomate", "Hummus 1 Porção"] },
-      { quantity: 1, name: "Salada Vegana" },
-    ],
-    timer: "00:00:00",
-    isFinishing: false,
-    atrasado: false,
-  },
-  {
-    id: "332-2",
-    customer: "Bad Ass Breakfast",
-    location: "Retirada",
-    dueTime: "23:44",
-    status: "preparoPausado" as const,
-    items: [
-      { quantity: 1, name: "California Roll de Caranguejo", modifiers: ["Arroz Branco Premium", "Molho Picante"] },
-      { quantity: 1, name: "Salada Vegana" },
-      { quantity: 1, name: "Sopa de Missô com Camarão" },
-    ],
-    timer: "00:00:00",
-    isFinishing: false,
-    atrasado: false,
-  },
-  {
-    id: "332-3",
-    customer: "Bad Ass Breakfast",
-    location: "Retirada",
-    dueTime: "23:44",
-    status: "preparoAguardandoProducao" as const,
-    items: [
-      { quantity: 1, name: "California Roll de Caranguejo", modifiers: ["Arroz Branco Premium", "Molho Picante"] },
-      { quantity: 1, name: "Salada Vegana" },
-      { quantity: 1, name: "Sopa de Missô com Camarão" },
-    ],
-    timer: "00:00:00",
-    isFinishing: false,
-    atrasado: false,
-  },
-  {
-    id: "333465882-2",
-    customer: "The Halal Guys",
-    location: "Retirada",
-    dueTime: "11:45",
-    status: "preparoAguardandoProducao" as const,
-    items: [
-      { quantity: 1, name: "Sopa de Missô com Camarão" },
-      { quantity: 1, name: "California Roll de Caranguejo", modifiers: ["Arroz Branco Premium", "Molho Picante"] },
-      { quantity: 1, name: "Sanduíche de Gyro de Carne", modifiers: ["Tomate", "Hummus 1 Porção"] },
-      { quantity: 1, name: "Salada Vegana" },
-    ],
-    timer: "00:00:00",
-    isFinishing: false,
-    atrasado: false,
-  },
-]
-
-// Mock data for locations
-const mockLocations: Location[] = [
-  {
-    id: "1",
-    name: "Kitchen Mink Centro",
-    type: "restaurante",
-    address: "Rua das Flores, 123 - Centro",
-  },
-  {
-    id: "2",
-    name: "Bar do Mink",
-    type: "bar",
-    address: "Av. Principal, 456 - Jardins",
-  },
-  {
-    id: "3",
-    name: "Pizzaria Mink Express",
-    type: "pizzaria",
-    address: "Rua da Pizza, 789 - Vila Nova",
-  },
-  {
-    id: "4",
-    name: "Kitchen Mink Shopping",
-    type: "restaurante",
-    address: "Shopping Center - Piso 3",
-  },
-]
-
-export default function KitchenManagementPage() {
-  const [currentTime, setCurrentTime] = useState(new Date())
-  const [searchQuery, setSearchQuery] = useState("")
-  const [activeFilter, setActiveFilter] = useState("all")
-  const [isLocationModalOpen, setIsLocationModalOpen] = useState(false)
-  const [selectedLocationId, setSelectedLocationId] = useState(mockLocations[0].id)
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date())
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [])
-
-  const formatDateTime = (date: Date) => {
-    const weekdays = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"]
-    const weekday = weekdays[date.getDay()]
-    const day = date.getDate()
-    const month = date.getMonth() + 1
-    const year = date.getFullYear().toString().slice(-2)
-    const hours = date.getHours()
-    const minutes = date.getMinutes().toString().padStart(2, "0")
-
-    return `${weekday} ${day}/${month}/${year} | ${hours}:${minutes}`
-  }
-
-  const filteredOrders = mockOrders.filter((order) => {
-    const matchesSearch =
-      order.customer.toLowerCase().includes(searchQuery.toLowerCase()) || order.id.includes(searchQuery)
-
-    let matchesFilter = false
-    if (activeFilter === "all") {
-      matchesFilter = true
-    } else if (activeFilter === "atrasado") {
-      matchesFilter = order.atrasado === true
-    } else {
-      matchesFilter = order.status === activeFilter
-    }
-
-    return matchesSearch && matchesFilter
-  })
-
-  const filterCounts = {
-    all: mockOrders.length,
-    preparoAguardandoProducao: mockOrders.filter((o) => o.status === "preparoAguardandoProducao").length,
-    preparoEmProducao: mockOrders.filter((o) => o.status === "preparoEmProducao").length,
-    preparoPausado: mockOrders.filter((o) => o.status === "preparoPausado").length,
-    preparoCancelado: mockOrders.filter((o) => o.status === "preparoCancelado").length,
-    preparoFinalizado: mockOrders.filter((o) => o.status === "preparoFinalizado").length,
-    atrasado: mockOrders.filter((o) => o.atrasado === true).length,
-  }
-
-  const selectedLocation = mockLocations.find((loc) => loc.id === selectedLocationId) || mockLocations[0]
-
-  const getLocationTypeColor = (type: Location["type"]) => {
-    const colors = {
-      restaurante: "bg-blue-500",
-      bar: "bg-purple-500",
-      pizzaria: "bg-orange-500",
-    }
-    return colors[type]
-  }
-
+export default function HomePage() {
   return (
-    <div className="min-h-screen bg-background pb-24">
-      {/* Header */}
-      <header className="border-b bg-card">
-        <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <div className="flex items-center gap-4">
-            <div className="relative w-full sm:w-80">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Buscar pedidos..."
-                className="pl-9"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+    <main className="min-h-screen bg-white text-gray-900">
+      {/* Hero */}
+      <section className="relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-[#0B1D39] via-[#0B1D39] to-[#102a4a]" />
+        <div className="absolute -left-24 -top-24 h-64 w-64 rounded-full bg-[#F97316]/20 blur-3xl" />
+        <div className="absolute -right-24 -bottom-24 h-72 w-72 rounded-full bg-[#F97316]/30 blur-3xl" />
+
+        <div className="relative mx-auto max-w-7xl px-6 py-20 sm:py-28">
+          <div className="grid items-center gap-10 md:grid-cols-2">
+            <div className="space-y-6">
+              <span className="inline-block rounded-full bg-white/10 px-3 py-1 text-xs font-medium tracking-wide text-white ring-1 ring-white/20">
+                UNISYSTEM TECNOLOGIA
+              </span>
+              <h1 className="text-4xl font-extrabold leading-tight text-white sm:text-5xl">
+                Operação de cozinha mais inteligente, ágil e integrada
+              </h1>
+              <p className="max-w-xl text-base leading-relaxed text-white/80">
+                Simplifique a gestão da sua cozinha com uma plataforma moderna e robusta: pedidos em tempo real,
+                performance visível e uma experiência que o seu time vai adorar.
+              </p>
+              <div className="flex flex-wrap gap-3 pt-2">
+                <a
+                  className="inline-flex items-center gap-2 rounded-md bg-[#F97316] px-5 py-3 text-sm font-semibold text-white shadow hover:bg-[#ea6a0d] focus:outline-none focus:ring-2 focus:ring-white/40"
+                  href="#features"
+                >
+                  Conheça os recursos
+                </a>
+                <a
+                  className="inline-flex items-center gap-2 rounded-md border border-white/20 bg-white/10 px-5 py-3 text-sm font-semibold text-white hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/40"
+                  href="#contact"
+                >
+                  Fale com a gente
+                </a>
+              </div>
+              <div className="mt-6 flex items-center gap-6 text-white/70">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl font-extrabold text-white">99.9%</span>
+                  <span className="text-sm">uptime</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl font-extrabold text-white">+1M</span>
+                  <span className="text-sm">pedidos processados</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl font-extrabold text-white">24/7</span>
+                  <span className="text-sm">suporte</span>
+                </div>
+              </div>
+            </div>
+            <div className="relative">
+              <div className="mx-auto max-w-md rounded-2xl border border-white/10 bg-white/5 p-4 shadow-2xl ring-1 ring-white/10 backdrop-blur">
+                <div className="aspect-video w-full rounded-lg bg-gradient-to-br from-white/10 via-white/5 to-white/0" />
+                <div className="mt-4 grid grid-cols-3 gap-3 text-[10px] text-white/80 sm:text-xs">
+                  <div className="rounded-md bg-white/10 p-3">Tempo real</div>
+                  <div className="rounded-md bg-white/10 p-3">Fila otimizada</div>
+                  <div className="rounded-md bg-white/10 p-3">Métricas</div>
+                  <div className="rounded-md bg-white/10 p-3">Status visível</div>
+                  <div className="rounded-md bg-white/10 p-3">UX de equipe</div>
+                  <div className="rounded-md bg-white/10 p-3">Multi-terminais</div>
+                </div>
+              </div>
             </div>
           </div>
-          <div className="text-xs font-medium sm:text-sm">{formatDateTime(currentTime)}</div>
         </div>
-        <div className="border-t px-4 py-3 sm:px-6">
-          <div className="overflow-x-auto">
-            <FilterBar activeFilter={activeFilter} onFilterChange={setActiveFilter} counts={filterCounts} />
-          </div>
-        </div>
-      </header>
+      </section>
 
-      {/* Orders Grid */}
-      <main className="p-4 sm:p-6">
-        <div className="grid grid-cols-1 gap-4 min-[640px]:grid-cols-2 min-[1024px]:grid-cols-3 min-[1280px]:grid-cols-4 min-[1536px]:grid-cols-5">
-          {filteredOrders.map((order) => (
-            <OrderCard key={order.id} order={order} />
+      {/* Features */}
+      <section id="features" className="mx-auto max-w-7xl px-6 py-16 sm:py-20">
+        <div className="grid gap-8 md:grid-cols-3">
+          {[
+            {
+              title: 'Velocidade e foco',
+              desc: 'Listagem inteligente, contagens por status e controles rápidos para seu time ganhar tempo.',
+              accent: 'from-[#0B1D39] to-[#102a4a]'
+            },
+            {
+              title: 'Confiável e seguro',
+              desc: 'Arquitetura robusta com monitoramento e observabilidade para operação sem interrupções.',
+              accent: 'from-[#F97316] to-[#ff8a3d]'
+            },
+            {
+              title: 'Pronto para crescer',
+              desc: 'Multi-empresa, multi-terminais e paginação eficiente para alto volume de pedidos.',
+              accent: 'from-gray-100 to-white'
+            }
+          ].map((f, i) => (
+            <div key={i} className="group relative overflow-hidden rounded-xl border bg-white p-6 shadow-sm transition hover:shadow-md">
+              <div className={`pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full bg-gradient-to-br ${f.accent} opacity-10`} />
+              <h3 className="text-lg font-semibold text-gray-900">{f.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-gray-600">{f.desc}</p>
+              <div className="mt-5 h-px w-full bg-gradient-to-r from-transparent via-gray-200 to-transparent" />
+              <div className="mt-4 text-xs font-medium text-[#0B1D39]">Unisystem Tecnologia</div>
+            </div>
           ))}
         </div>
-      </main>
+      </section>
 
-      {/* Footer */}
-      <footer className="fixed bottom-0 left-0 right-0 border-t bg-card">
-        <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => setIsLocationModalOpen(true)}>
-              <Menu className="h-5 w-5" />
-            </Button>
-            <div className="flex items-center gap-2">
-              <div
-                className={`h-8 w-8 rounded flex items-center justify-center ${getLocationTypeColor(selectedLocation.type)}`}
-              >
-                <span className="text-xs font-bold text-white">
-                  {selectedLocation.name.substring(0, 2).toUpperCase()}
-                </span>
-              </div>
-              <span className="text-xs font-medium sm:text-sm">{selectedLocation.name}</span>
+      {/* Highlight Strip */}
+      <section className="bg-gray-50">
+        <div className="mx-auto max-w-7xl px-6 py-12">
+          <div className="grid items-center gap-6 md:grid-cols-2">
+            <div className="order-2 md:order-1">
+              <h2 className="text-2xl font-bold text-[#0B1D39]">Tecnologia para transformar a sua operação</h2>
+              <p className="mt-3 text-sm leading-relaxed text-gray-600">
+                Da seleção de terminais à visualização de pedidos, o fluxo foi desenhado para ser natural, rápido e
+                centrado na experiência do usuário. O resultado? Mais precisão, menos atrito e um time mais produtivo.
+              </p>
+            </div>
+            <div className="order-1 md:order-2">
+              <div className="h-40 rounded-lg bg-gradient-to-tr from-[#F97316]/20 to-[#0B1D39]/20 ring-1 ring-gray-200" />
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon">
-              <span className="text-lg">↑</span>
-            </Button>
-            <span className="text-xs sm:text-sm">Página 1 de 1</span>
-            <Button variant="outline" size="icon">
-              <span className="text-lg">↓</span>
-            </Button>
+        </div>
+      </section>
+
+      {/* Metrics */}
+      <section className="mx-auto max-w-7xl px-6 py-16 sm:py-20">
+        <div className="grid gap-8 rounded-xl border bg-white p-6 shadow-sm sm:grid-cols-3">
+          {[
+            { k: '+35%', v: 'Velocidade na produção' },
+            { k: '-28%', v: 'Erros operacionais' },
+            { k: '+18%', v: 'Giro de pedidos' }
+          ].map((m, i) => (
+            <div key={i} className="text-center">
+              <div className="text-3xl font-extrabold text-[#0B1D39]">{m.k}</div>
+              <div className="mt-1 text-sm text-gray-600">{m.v}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* CTA */}
+      <section id="contact" className="relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-[#0B1D39] via-[#0B1D39] to-[#102a4a]" />
+        <div className="relative mx-auto max-w-7xl px-6 py-16">
+          <div className="grid items-center gap-8 md:grid-cols-3">
+            <div className="md:col-span-2">
+              <h3 className="text-2xl font-bold text-white">Pronto para elevar sua cozinha ao próximo nível?</h3>
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/80">
+                A Unisystem Tecnologia constrói software com foco em performance, confiabilidade e experiência.
+                Vamos juntos acelerar sua operação.
+              </p>
+            </div>
+            <div className="flex md:justify-end">
+              <a
+                className="inline-flex items-center gap-2 rounded-md bg-[#F97316] px-5 py-3 text-sm font-semibold text-white shadow hover:bg-[#ea6a0d] focus:outline-none focus:ring-2 focus:ring-white/40"
+                href="mailto:contato@unisystem.com.br"
+              >
+                Entrar em contato
+              </a>
+            </div>
           </div>
         </div>
-      </footer>
+      </section>
 
-      {/* Location Selector Modal */}
-      <LocationSelectorModal
-        open={isLocationModalOpen}
-        onOpenChange={setIsLocationModalOpen}
-        locations={mockLocations}
-        selectedLocationId={selectedLocationId}
-        onSelectLocation={setSelectedLocationId}
-      />
-    </div>
+      {/* Footer */}
+      <footer className="border-t bg-white">
+        <div className="mx-auto max-w-7xl px-6 py-8 text-center text-xs text-gray-500">
+          © {new Date().getFullYear()} Unisystem Tecnologia. Todos os direitos reservados.
+        </div>
+      </footer>
+    </main>
   )
 }

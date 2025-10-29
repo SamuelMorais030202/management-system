@@ -3,20 +3,15 @@
 import { Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-
-export interface Location {
-  id: string
-  name: string
-  type: "restaurante" | "bar" | "pizzaria"
-  address: string
-}
+import { Terminals } from "@/hooks/useLoadTerminals"
+import { getLocationTypeColor } from "@/utils/getLocationTypeColor"
 
 interface LocationSelectorModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  locations: Location[]
-  selectedLocationId: string
-  onSelectLocation: (locationId: string) => void
+  locations: Terminals[]
+  selectedLocationId: number | null
+  onSelectLocation: (locationId: number | null) => void
 }
 
 export function LocationSelectorModal({
@@ -26,23 +21,6 @@ export function LocationSelectorModal({
   selectedLocationId,
   onSelectLocation,
 }: LocationSelectorModalProps) {
-  const getLocationTypeLabel = (type: Location["type"]) => {
-    const labels = {
-      restaurante: "Restaurante",
-      bar: "Bar",
-      pizzaria: "Pizzaria",
-    }
-    return labels[type]
-  }
-
-  const getLocationTypeColor = (type: Location["type"]) => {
-    const colors = {
-      restaurante: "bg-blue-500",
-      bar: "bg-purple-500",
-      pizzaria: "bg-orange-500",
-    }
-    return colors[type]
-  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -51,28 +29,47 @@ export function LocationSelectorModal({
           <DialogTitle>Selecionar Ponto de Venda</DialogTitle>
         </DialogHeader>
         <div className="space-y-2 py-4">
-          {locations.map((location) => {
-            const isSelected = location.id === selectedLocationId
+          {/* Opção "Ver todos" */}
+          <Button
+            key="ver-todos"
+            variant={selectedLocationId === null ? "secondary" : "ghost"}
+            className="w-full justify-start gap-3 h-auto py-3"
+            onClick={() => {
+              onSelectLocation(null)
+              onOpenChange(false)
+            }}
+          >
+            <div
+              className={`h-10 w-10 rounded flex items-center justify-center flex-shrink-0 ${getLocationTypeColor("Ver todos")}`}
+            >
+              <span className="text-xs font-bold text-white">{"Ver todos".substring(0, 2).toUpperCase()}</span>
+            </div>
+            <div className="flex-1 text-left">
+              <div className="font-medium">Ver todos</div>
+            </div>
+            {selectedLocationId === null && <Check className="h-5 w-5 text-primary" />}
+          </Button>
+
+          {/* Lista de terminais */}
+          {locations && locations.map((location) => {
+            const isSelected = location.terminalId === selectedLocationId
             return (
               <Button
-                key={location.id}
+                key={location.terminalId}
                 variant={isSelected ? "secondary" : "ghost"}
                 className="w-full justify-start gap-3 h-auto py-3"
                 onClick={() => {
-                  onSelectLocation(location.id)
+                  onSelectLocation(location.terminalId)
                   onOpenChange(false)
                 }}
               >
                 <div
-                  className={`h-10 w-10 rounded flex items-center justify-center flex-shrink-0 ${getLocationTypeColor(location.type)}`}
+                  className={`h-10 w-10 rounded flex items-center justify-center flex-shrink-0 ${getLocationTypeColor(location.nome)}`}
                 >
-                  <span className="text-xs font-bold text-white">{location.name.substring(0, 2).toUpperCase()}</span>
+                  <span className="text-xs font-bold text-white">{location.nome.substring(0, 2).toUpperCase()}</span>
                 </div>
                 <div className="flex-1 text-left">
-                  <div className="font-medium">{location.name}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {getLocationTypeLabel(location.type)} • {location.address}
-                  </div>
+                  <div className="font-medium">{location.nome}</div>
                 </div>
                 {isSelected && <Check className="h-5 w-5 text-primary" />}
               </Button>
