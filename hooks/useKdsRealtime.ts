@@ -1,8 +1,10 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 
 type KdsMessage = unknown
+
+type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error"
 
 interface UseKdsRealtimeOptions {
   url?: string
@@ -15,6 +17,7 @@ export function useKdsRealtime({ url = process.env.NEXT_PUBLIC_KDS_WS_URL ?? "ws
   const retryRef = useRef<number>(0)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const onMessageRef = useRef(onMessage)
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("connecting")
 
   // Atualiza a ref sempre que onMessage mudar, sem recriar a conexão
   useEffect(() => {
@@ -26,12 +29,14 @@ export function useKdsRealtime({ url = process.env.NEXT_PUBLIC_KDS_WS_URL ?? "ws
 
     const connect = () => {
       console.log(`🔌 [KDS WebSocket] Tentando conectar em: ${url} (Company ID: ${companyId})`)
+      setConnectionStatus("connecting")
       try {
         const ws = new WebSocket(url)
         wsRef.current = ws
 
         ws.onopen = () => {
           console.log("🔌 [KDS WebSocket] Conectado com sucesso:", url)
+          setConnectionStatus("connected")
           retryRef.current = 0
           const registerPayload = {
             command: "@REGISTER@",
@@ -57,6 +62,7 @@ export function useKdsRealtime({ url = process.env.NEXT_PUBLIC_KDS_WS_URL ?? "ws
 
         ws.onerror = (error) => {
           console.error("❌ [KDS WebSocket] Erro na conexão:", error)
+          setConnectionStatus("error")
           // allow close handler to handle reconnection
         }
 
@@ -65,8 +71,10 @@ export function useKdsRealtime({ url = process.env.NEXT_PUBLIC_KDS_WS_URL ?? "ws
           wsRef.current = null
           if (closedByUser) {
             console.log("👋 [KDS WebSocket] Fechado pelo usuário, não reconectando")
+            setConnectionStatus("disconnected")
             return
           }
+          setConnectionStatus("disconnected")
           const retry = Math.min(30_000, 1000 * Math.pow(2, retryRef.current++))
           console.log(`🔄 [KDS WebSocket] Tentando reconectar em ${retry}ms (tentativa ${retryRef.current})`)
           reconnectTimerRef.current && clearTimeout(reconnectTimerRef.current)
@@ -74,6 +82,7 @@ export function useKdsRealtime({ url = process.env.NEXT_PUBLIC_KDS_WS_URL ?? "ws
         }
       } catch (error) {
         console.error("❌ [KDS WebSocket] Erro ao criar conexão:", error)
+        setConnectionStatus("error")
         // schedule another attempt
         const retry = Math.min(30_000, 1000 * Math.pow(2, retryRef.current++))
         console.log(`🔄 [KDS WebSocket] Tentando reconectar em ${retry}ms (tentativa ${retryRef.current})`)
@@ -88,6 +97,7 @@ export function useKdsRealtime({ url = process.env.NEXT_PUBLIC_KDS_WS_URL ?? "ws
     return () => {
       console.log("🧹 [KDS WebSocket] Limpando conexão WebSocket")
       closedByUser = true
+      setConnectionStatus("disconnected")
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current)
         console.log("🛑 [KDS WebSocket] Timer de reconexão cancelado")
@@ -98,6 +108,8 @@ export function useKdsRealtime({ url = process.env.NEXT_PUBLIC_KDS_WS_URL ?? "ws
       }
     }
   }, [url, companyId]) // Removido onMessage das dependências para evitar loop infinito
+
+  return { connectionStatus }
 }
 
 

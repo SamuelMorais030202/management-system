@@ -1,6 +1,6 @@
 "use client"
 
-import { X } from "lucide-react"
+import { X, AlertCircle, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
@@ -59,10 +59,10 @@ export function OrderDetailsModal({ order, open, onOpenChange }: OrderDetailsMod
           <div className="flex items-start justify-between rounded-lg border bg-muted/50 p-4">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <span className="text-lg font-bold">#{order.keyId}</span>
-                <span className="text-sm text-muted-foreground">{order.clienteNome}</span>
+                <span className="text-lg font-bold">#{order.preparoProducaoId}</span>
+                <span className="text-sm text-muted-foreground">Cliente: {order.clienteNome}</span>
               </div>
-              <div className="text-sm text-muted-foreground">{order.comandaNumero}</div>
+              <div className="text-sm text-muted-foreground">Comanda: {order.comandaNumero}</div>
               {order.dataHoraStatus && (
                 <div className="mt-2 inline-block rounded bg-red-100 px-2 py-1 text-xs font-medium text-red-800">
                   PEDIDO ATRASADO
@@ -70,7 +70,7 @@ export function OrderDetailsModal({ order, open, onOpenChange }: OrderDetailsMod
               )}
             </div>
             <div className="text-right">
-              <div className="text-sm font-medium">Entrega {order.tempoPreparo}</div>
+              <div className="text-sm font-medium">~ {order.tempoPreparo} min</div>
               <div className={cn("mt-2 inline-block rounded px-3 py-1 text-sm font-bold", config.bg, config.text)}>
                 {config.label}
               </div>
@@ -82,6 +82,23 @@ export function OrderDetailsModal({ order, open, onOpenChange }: OrderDetailsMod
             <div className="text-sm font-medium text-muted-foreground">Tempo de Preparo</div>
             <div className="mt-1 font-mono text-2xl font-bold">{order.tempoPreparo}</div>
           </div>
+
+          {/* Observação Geral do Pedido */}
+          {order.observacao && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:bg-amber-950/30 dark:border-amber-800">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-500 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold text-amber-900 dark:text-amber-100 mb-2">
+                    Observação Geral do Pedido
+                  </div>
+                  <p className="text-sm break-words text-amber-800 dark:text-amber-200 leading-relaxed">
+                    {order.observacao}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Items List */}
           <div className="space-y-4">
@@ -103,6 +120,21 @@ export function OrderDetailsModal({ order, open, onOpenChange }: OrderDetailsMod
                               {modifier.qtde}x {modifier.nome}
                             </div>
                           ))}
+                        </div>
+                      )}
+                      {item.observacao && (
+                        <div className="mt-3 rounded-md bg-blue-50 border border-blue-200 p-3 dark:bg-blue-950/30 dark:border-blue-800">
+                          <div className="flex items-start gap-2">
+                            <FileText className="h-4 w-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                                Observação do Item
+                              </div>
+                              <p className="text-sm break-words text-blue-800 dark:text-blue-200 leading-relaxed">
+                                {item.observacao}
+                              </p>
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>

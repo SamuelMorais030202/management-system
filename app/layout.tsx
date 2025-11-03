@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { GeistSans } from 'geist/font/sans'
 import { GeistMono } from 'geist/font/mono'
 import { Analytics } from '@vercel/analytics/next'
+import { Toaster } from 'sonner'
 import './globals.css'
 import { ReactQueryProvider } from '@/lib/react-query-provider'
 
@@ -23,6 +24,7 @@ export default function RootLayout({
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable}`}>
         <ReactQueryProvider>
           {children}
+          <Toaster position="top-right" richColors />
           <Analytics />
         </ReactQueryProvider>
       </body>

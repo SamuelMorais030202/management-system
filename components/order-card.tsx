@@ -1,17 +1,20 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Printer, Pause, Play, ChevronDown } from "lucide-react"
+import { Printer, Pause, Play, ChevronDown, AlertCircle, FileText, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import { OrderDetailsModal } from "./order-details-modal"
+import { ObservationModal } from "./observation-modal"
 import { PreparoProducao } from "@/hooks/useLoadOrdersByTerminal"
 import { useStartPreparation } from "@/hooks/useStartPreparation"
 import { useParams } from "next/navigation"
 import { useFinishPreparation } from "@/hooks/useFinishPreparation"
 import { usePausePreparation } from "@/hooks/usePausePreparation"
 import { handlePrintOrder } from "@/utils/handlePrint"
+import { toast } from "sonner"
+import { formatTimeAgo } from "@/utils/formatTimeAgo"
 
 interface OrderCardProps {
   order: PreparoProducao & { atrasado?: boolean }
@@ -52,6 +55,9 @@ export function OrderCard({ order }: OrderCardProps) {
   const [isRunning, setIsRunning] = useState(order.status === "preparoEmProducao")
   const [currentStatus, setCurrentStatus] = useState(order.status)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
+  const [showObservationModal, setShowObservationModal] = useState(false)
+  const [selectedObservation, setSelectedObservation] = useState<{ text: string; type: "general" | "item"; title: string } | null>(null)
+  const [timeAgo, setTimeAgo] = useState(formatTimeAgo(order.createdAt))
 
   const { mutate: startPreparation } = useStartPreparation(Number(empresaId || 0), order.preparoProducaoId)
   const { mutate: finishPreparation } = useFinishPreparation(Number(empresaId || 0), order.preparoProducaoId)
@@ -111,30 +117,89 @@ export function OrderCard({ order }: OrderCardProps) {
     return () => clearInterval(interval)
   }, [isRunning, order.status])
 
+  // Atualiza o tempo relativo (há X tempo atrás) a cada minuto
+  useEffect(() => {
+    setTimeAgo(formatTimeAgo(order.createdAt))
+    
+    const interval = setInterval(() => {
+      setTimeAgo(formatTimeAgo(order.createdAt))
+    }, 60000) // Atualiza a cada minuto
+
+    return () => clearInterval(interval)
+  }, [order.createdAt])
+
   const handleStartCooking = () => {
     if (currentStatus === "preparoFinalizado") return
     setIsRunning(true)
-    startPreparation()
-    setCurrentStatus("preparoEmProducao")
+    startPreparation(undefined, {
+      onSuccess: () => {
+        toast.success("Preparo iniciado", {
+          description: `Pedido #${order.preparoProducaoId} está em produção`,
+        })
+        setCurrentStatus("preparoEmProducao")
+      },
+      onError: () => {
+        toast.error("Erro ao iniciar preparo", {
+          description: "Não foi possível iniciar o preparo. Tente novamente.",
+        })
+        setIsRunning(false)
+      },
+    })
   }
 
   const handleFinishCooking = () => {
     setIsRunning(false)
-    finishPreparation()
-    setCurrentStatus("preparoFinalizado")
+    finishPreparation(undefined, {
+      onSuccess: () => {
+        toast.success("Preparo finalizado", {
+          description: `Pedido #${order.preparoProducaoId} foi finalizado com sucesso`,
+        })
+        setCurrentStatus("preparoFinalizado")
+      },
+      onError: () => {
+        toast.error("Erro ao finalizar preparo", {
+          description: "Não foi possível finalizar o preparo. Tente novamente.",
+        })
+        setIsRunning(true)
+      },
+    })
   }
 
   const handlePauseCooking = () => {
     setIsRunning(false)
-    pausePreparation()
-    setCurrentStatus("preparoPausado")
+    pausePreparation(undefined, {
+      onSuccess: () => {
+        toast.info("Preparo pausado", {
+          description: `Pedido #${order.preparoProducaoId} foi pausado`,
+        })
+        setCurrentStatus("preparoPausado")
+      },
+      onError: () => {
+        toast.error("Erro ao pausar preparo", {
+          description: "Não foi possível pausar o preparo. Tente novamente.",
+        })
+        setIsRunning(true)
+      },
+    })
   }
 
   const handleResumeCooking = () => {
     if (currentStatus === "preparoFinalizado") return
     setIsRunning(true)
-    startPreparation()
-    setCurrentStatus("preparoEmProducao")
+    startPreparation(undefined, {
+      onSuccess: () => {
+        toast.success("Preparo retomado", {
+          description: `Pedido #${order.preparoProducaoId} está em produção novamente`,
+        })
+        setCurrentStatus("preparoEmProducao")
+      },
+      onError: () => {
+        toast.error("Erro ao retomar preparo", {
+          description: "Não foi possível retomar o preparo. Tente novamente.",
+        })
+        setIsRunning(false)
+      },
+    })
   }
 
   const config = statusConfig[currentStatus]
@@ -149,12 +214,71 @@ export function OrderCard({ order }: OrderCardProps) {
     return buttonColorConfig[currentStatus]
   }
 
+  // Função para truncar texto no card
+  const truncateText = (text: string, maxLength: number) => {
+    if (!text || text.length <= maxLength) return { text, isTruncated: false }
+    return {
+      text: text.substring(0, maxLength).trim() + "...",
+      isTruncated: true
+    }
+  }
+
+  // Limites de caracteres (ajustáveis por responsividade)
+  const MAX_OBSERVACAO_GERAL_LENGTH = 120 // ~2 linhas em mobile
+  const MAX_OBSERVACAO_ITEM_LENGTH = 80 // ~1.5 linhas em mobile
+
+  const observacaoGeralTruncated = order.observacao 
+    ? truncateText(order.observacao, MAX_OBSERVACAO_GERAL_LENGTH)
+    : null
+
+  // Calcula o progresso do preparo (0-100%) baseado no timer
+  const [progress, setProgress] = useState(0)
+  const [isOverdue, setIsOverdue] = useState(false)
+
+  useEffect(() => {
+    if (order.status === "preparoAguardandoProducao" || !order.tempoPreparo) {
+      setProgress(0)
+      setIsOverdue(false)
+      return
+    }
+
+    if (order.status === "preparoFinalizado" || order.status === "preparoCancelado") {
+      setProgress(100)
+      setIsOverdue(false)
+      return
+    }
+
+    if (!order.dataHoraStatus || !isRunning) {
+      // Calcula baseado no timer atual quando pausado
+      if (order.status === "preparoPausado" && timer !== "00:00:00") {
+        const [h, m, s] = timer.split(":").map(Number)
+        const elapsedSeconds = h * 3600 + m * 60 + s
+        const estimatedSeconds = order.tempoPreparo * 60
+        const calculatedProgress = (elapsedSeconds / estimatedSeconds) * 100
+        setProgress(Math.min(100, calculatedProgress))
+        setIsOverdue(calculatedProgress > 100)
+      } else {
+        setProgress(0)
+        setIsOverdue(false)
+      }
+      return
+    }
+
+    // Calcula baseado no timer para atualização em tempo real
+    const [h, m, s] = timer.split(":").map(Number)
+    const elapsedSeconds = h * 3600 + m * 60 + s
+    const estimatedSeconds = order.tempoPreparo * 60
+    const calculatedProgress = (elapsedSeconds / estimatedSeconds) * 100
+    setProgress(Math.min(100, calculatedProgress))
+    setIsOverdue(calculatedProgress > 100)
+  }, [timer, order.status, order.tempoPreparo, order.dataHoraStatus, isRunning])
+
   return (
     <>
       <Card className="flex min-w-[280px] max-w-full flex-col overflow-hidden">
         {/* Header */}
         <div className="flex flex-col gap-2 border-b p-3 sm:flex-row sm:items-start sm:justify-between sm:p-4">
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 flex flex-col gap-1">
             <div className="flex flex-wrap items-center gap-2">
               <span
                 className="text-sm font-bold text-blue-600 cursor-pointer hover:underline hover:opacity-80 transition"
@@ -162,18 +286,110 @@ export function OrderCard({ order }: OrderCardProps) {
               >
                 #{order.preparoProducaoId}
               </span>
-              <span className="truncate text-sm text-muted-foreground">{order.garcom}</span>
-              <span className="truncate text-sm text-muted-foreground">Cliente: {order.clienteNome}</span>
             </div>
-            <div className="text-xs text-muted-foreground">{order.mesaNumero}</div>
+            <span className="truncate text-sm text-muted-foreground">Garçom: {order.garcom || "Não informado"}</span>
+            <span className="truncate text-sm text-muted-foreground">Cliente: {order.clienteNome || "Não informado"}</span>
+            <span className="truncate text-sm text-muted-foreground">Mesa: {order.mesaNumero || "Não informado"}</span>
           </div>
           <div className="flex items-center justify-between gap-2 sm:flex-col sm:items-end sm:text-right">
+            {timeAgo && (
+              <div className="text-xs text-muted-foreground sm:text-right">
+                {timeAgo}
+              </div>
+            )}
             <div className="text-xs font-medium">~ {order.tempoPreparo} min</div>
             <div className={cn("inline-block rounded px-2 py-0.5 text-xs font-bold", config.bg, config.text)}>
               {config.label}
             </div>
           </div>
         </div>
+
+        {/* Barra de Progresso */}
+        {(currentStatus === "preparoEmProducao" || currentStatus === "preparoPausado") && order.tempoPreparo > 0 && (
+          <div className="border-b px-3 py-2 sm:px-4 sm:py-2.5">
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <span className="text-xs font-medium text-muted-foreground">Progresso</span>
+              <span className={cn(
+                "text-xs font-medium",
+                isOverdue ? "text-red-600 dark:text-red-500" : "text-muted-foreground"
+              )}>
+                {isOverdue ? `${Math.floor(progress)}%` : `${Math.floor(progress)}%`}
+              </span>
+            </div>
+            <div className="relative h-2 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className={cn(
+                  "h-full transition-all duration-300 ease-out",
+                  isOverdue
+                    ? "bg-red-500 dark:bg-red-600"
+                    : progress < 50
+                    ? "bg-green-500 dark:bg-green-600"
+                    : progress < 80
+                    ? "bg-yellow-500 dark:bg-yellow-600"
+                    : "bg-orange-500 dark:bg-orange-600"
+                )}
+                style={{ width: `${Math.min(100, progress)}%` }}
+              />
+            </div>
+            {/* Mensagem de atraso */}
+            {isOverdue && (
+              <div className="mt-2.5 rounded-md bg-red-50 border border-red-200 p-2 dark:bg-red-950/30 dark:border-red-800">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-red-600 dark:text-red-400 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-xs font-semibold text-red-900 dark:text-red-100 sm:text-sm">
+                      ⚠️ Pedido em Atraso
+                    </p>
+                    <p className="text-xs text-red-800 dark:text-red-200 mt-0.5">
+                      O tempo estimado de preparo foi ultrapassado. Finalize o pedido o quanto antes.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Observação Geral do Pedido */}
+        {order.observacao && (
+          <div className="mx-3 mb-2 sm:mx-4 sm:mb-3">
+            <div className="rounded-md bg-amber-50 border border-amber-200 p-2.5 sm:p-3 dark:bg-amber-950/30 dark:border-amber-800">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500 flex-shrink-0 mt-0.5 sm:h-5 sm:w-5" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="text-xs font-semibold text-amber-900 dark:text-amber-100 sm:text-sm">
+                      Observação Geral
+                    </div>
+                    {observacaoGeralTruncated?.isTruncated && (
+                      <button
+                        onClick={() => setShowDetailsModal(true)}
+                        className="text-xs text-amber-700 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200 underline font-medium"
+                      >
+                        Ver mais
+                      </button>
+                    )}
+                  </div>
+                  <p 
+                    className="text-xs break-words text-amber-800 dark:text-amber-200 sm:text-sm leading-relaxed overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => {
+                      if (order.observacao) {
+                        setSelectedObservation({
+                          text: order.observacao,
+                          type: "general",
+                          title: `Observação Geral - Pedido #${order.preparoProducaoId}`
+                        })
+                        setShowObservationModal(true)
+                      }
+                    }}
+                  >
+                    {observacaoGeralTruncated?.text || order.observacao}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Items */}
         <div className="flex-1 space-y-2 p-3 sm:space-y-3 sm:p-4">
@@ -182,7 +398,7 @@ export function OrderCard({ order }: OrderCardProps) {
               <div className="break-words font-medium">
                 {item.qtde} {item.nome}
               </div>
-              {item.adicionais && (
+              {item.adicionais && item.adicionais.length > 0 && (
                 <div className="ml-3 mt-1 space-y-0.5 sm:ml-4">
                   {item.adicionais.map((modifier, modIndex) => (
                     <div key={modIndex} className="break-words text-xs text-muted-foreground">
@@ -191,6 +407,51 @@ export function OrderCard({ order }: OrderCardProps) {
                   ))}
                 </div>
               )}
+              {item.observacao && (() => {
+                const observacaoItemTruncated = truncateText(item.observacao, MAX_OBSERVACAO_ITEM_LENGTH)
+                return (
+                  <div className="mt-1.5 sm:mt-2 ml-0 sm:ml-2">
+                    <div className="inline-flex items-start gap-1.5 rounded-md bg-blue-50 border border-blue-200 px-2 py-1.5 sm:px-2.5 sm:py-2 dark:bg-blue-950/30 dark:border-blue-800 max-w-full">
+                      <FileText className="h-3 w-3 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5 sm:h-3.5 sm:w-3.5" />
+                      <div className="flex-1 min-w-0">
+                        <p 
+                          className="text-xs break-words text-blue-800 dark:text-blue-200 leading-relaxed sm:text-xs overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                          onClick={() => {
+                            if (item.observacao) {
+                              setSelectedObservation({
+                                text: item.observacao,
+                                type: "item",
+                                title: `Observação do Item - ${item.qtde}x ${item.nome}`
+                              })
+                              setShowObservationModal(true)
+                            }
+                          }}
+                        >
+                          {observacaoItemTruncated.text}
+                        </p>
+                        {observacaoItemTruncated.isTruncated && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (item.observacao) {
+                                setSelectedObservation({
+                                  text: item.observacao,
+                                  type: "item",
+                                  title: `Observação do Item - ${item.qtde}x ${item.nome}`
+                                })
+                                setShowObservationModal(true)
+                              }
+                            }}
+                            className="text-xs text-blue-700 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-200 underline font-medium mt-0.5"
+                          >
+                            Ver mais
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           ))}
 
@@ -272,6 +533,16 @@ export function OrderCard({ order }: OrderCardProps) {
       </Card>
 
       <OrderDetailsModal order={order} open={showDetailsModal} onOpenChange={setShowDetailsModal} />
+      
+      {selectedObservation && (
+        <ObservationModal
+          open={showObservationModal}
+          onOpenChange={setShowObservationModal}
+          title={selectedObservation.title}
+          observation={selectedObservation.text}
+          type={selectedObservation.type}
+        />
+      )}
     </>
   )
 }

@@ -14,6 +14,9 @@ import { getLocationTypeColor } from "@/utils/getLocationTypeColor"
 import { useLoadTerminals } from "@/hooks/useLoadTerminals"
 import { useKdsRealtime } from "@/hooks/useKdsRealtime"
 import { useOrderCount } from "@/hooks/useOrderCount"
+import { WebSocketStatus } from "@/components/websocket-status"
+import { toast } from "sonner"
+import { playNotificationSound, initAudioContext } from "@/utils/sound"
 
 export interface Order {
   id: string
@@ -50,7 +53,7 @@ export default function KitchenManagementPage() {
   const [currentTime, setCurrentTime] = useState(new Date())
   const [searchQuery, setSearchQuery] = useState("")
   const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0])
-  const [endDate, setEndDate] = useState("")
+  const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0])
   const [filterStartDate, setFilterStartDate] = useState(startDate)
   const [filterEndDate, setFilterEndDate] = useState(endDate)
   const [activeFilter, setActiveFilter] = useState("all")
@@ -73,6 +76,64 @@ export default function KitchenManagementPage() {
   const { data: terminals } = useLoadTerminals(Number(empresaId))
   const { data: ordersCount } = useOrderCount(terminal!, Number(empresaId), filterStartDate, filterEndDate)
 
+  // Ref para armazenar IDs de pedidos anteriores para detectar novos
+  const previousOrderIdsRef = useRef<Set<number>>(new Set())
+  const isInitialLoadRef = useRef<boolean>(true)
+
+  // Detecta novos pedidos e mostra notificação
+  useEffect(() => {
+    if (!data?.data || data.data.length === 0) {
+      // Se não há dados, atualiza a ref com conjunto vazio
+      previousOrderIdsRef.current = new Set()
+      return
+    }
+
+    // Cria conjunto com IDs atuais
+    const currentOrderIds = new Set(data.data.map((order) => order.preparoProducaoId))
+    
+    // Ignora a primeira carga (carregamento inicial) para não tocar som ao carregar a página
+    if (isInitialLoadRef.current) {
+      isInitialLoadRef.current = false
+      previousOrderIdsRef.current = currentOrderIds
+      return
+    }
+    
+    // Se já temos pedidos anteriores, compara para detectar novos
+    if (previousOrderIdsRef.current.size > 0) {
+      // Encontra novos pedidos (estão nos atuais mas não nos anteriores)
+      const newOrders = data.data.filter(
+        (order) => !previousOrderIdsRef.current.has(order.preparoProducaoId)
+      )
+
+      // Se há novos pedidos, mostra notificação
+      if (newOrders.length > 0) {
+        // Toca som discreto (apenas se não for carregamento inicial)
+        // Não precisa aguardar, executa em background
+        playNotificationSound('new-order').catch((error) => {
+          console.warn('Erro ao reproduzir som:', error)
+        })
+
+        // Mostra notificação toast discreta
+        const newOrdersCount = newOrders.length
+        const orderLabel = newOrdersCount === 1 ? 'pedido' : 'pedidos'
+        
+        toast.info(`Novo${newOrdersCount > 1 ? 's' : ''} ${orderLabel} recebido${newOrdersCount > 1 ? 's' : ''}`, {
+          description: newOrdersCount === 1 
+            ? `Pedido #${newOrders[0].preparoProducaoId} está aguardando produção`
+            : `${newOrdersCount} novos pedidos aguardando produção`,
+          duration: 3000,
+          position: 'top-right',
+          style: {
+            background: 'hsl(var(--background))',
+            border: '1px solid hsl(var(--border))',
+          },
+        })
+      }
+    }
+
+    // Atualiza ref com IDs atuais para próxima comparação
+    previousOrderIdsRef.current = currentOrderIds
+  }, [data?.data])
 
   // Timer effect
   useEffect(() => {
@@ -81,6 +142,27 @@ export default function KitchenManagementPage() {
     }, 1000)
   
     return () => clearInterval(interval)
+  }, [])
+
+  // Inicializa contexto de áudio na primeira interação do usuário
+  useEffect(() => {
+    const handleUserInteraction = () => {
+      initAudioContext()
+      // Remove listeners após primeira interação
+      document.removeEventListener('click', handleUserInteraction)
+      document.removeEventListener('keydown', handleUserInteraction)
+      document.removeEventListener('touchstart', handleUserInteraction)
+    }
+
+    document.addEventListener('click', handleUserInteraction, { once: true })
+    document.addEventListener('keydown', handleUserInteraction, { once: true })
+    document.addEventListener('touchstart', handleUserInteraction, { once: true })
+
+    return () => {
+      document.removeEventListener('click', handleUserInteraction)
+      document.removeEventListener('keydown', handleUserInteraction)
+      document.removeEventListener('touchstart', handleUserInteraction)
+    }
   }, [])
 
   // Ref para armazenar o último timestamp de refetch (throttle)
@@ -119,7 +201,7 @@ export default function KitchenManagementPage() {
   }, [terminal, refetch])
 
   // Realtime updates via WebSocket: refetch on payloads
-  useKdsRealtime({
+  const { connectionStatus } = useKdsRealtime({
     companyId: Number(empresaId),
     onMessage: handleWebSocketMessage,
   })
@@ -367,8 +449,11 @@ export default function KitchenManagementPage() {
           </Button>
         </div>
 
-        {/* Exibe hora atual */}
-        <div className="text-xs font-medium sm:text-sm">{formatDateTime(currentTime)}</div>
+        {/* Exibe hora atual e status da conexão */}
+        <div className="flex items-center gap-3">
+          <WebSocketStatus status={connectionStatus} />
+          <div className="text-xs font-medium sm:text-sm">{formatDateTime(currentTime)}</div>
+        </div>
       </div>
         <div className="border-t px-4 py-3 sm:px-6">
           <div className="overflow-x-auto">
