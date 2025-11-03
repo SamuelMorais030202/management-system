@@ -160,7 +160,7 @@ export function OrderCard({ order }: OrderCardProps) {
                 className="text-sm font-bold text-blue-600 cursor-pointer hover:underline hover:opacity-80 transition"
                 onClick={() => setShowDetailsModal(true)}
               >
-                #{order.keyId}
+                #{order.preparoProducaoId}
               </span>
               <span className="truncate text-sm text-muted-foreground">{order.garcom}</span>
               <span className="truncate text-sm text-muted-foreground">Cliente: {order.clienteNome}</span>

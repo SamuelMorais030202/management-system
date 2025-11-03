@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { Search, Menu, Loader2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -12,6 +12,7 @@ import { useParams, useRouter } from "next/navigation"
 import { useLoadOrdersByTerminal, PreparoProducao, TempoPreparoStatus } from "@/hooks/useLoadOrdersByTerminal"
 import { getLocationTypeColor } from "@/utils/getLocationTypeColor"
 import { useLoadTerminals } from "@/hooks/useLoadTerminals"
+import { useKdsRealtime } from "@/hooks/useKdsRealtime"
 import { useOrderCount } from "@/hooks/useOrderCount"
 
 export interface Order {
@@ -81,6 +82,47 @@ export default function KitchenManagementPage() {
   
     return () => clearInterval(interval)
   }, [])
+
+  // Ref para armazenar o último timestamp de refetch (throttle)
+  const lastRefetchRef = useRef<number>(0)
+
+  // Callback memoizado para mensagens do WebSocket
+  const handleWebSocketMessage = useCallback((payload: unknown) => {
+    console.log("📨 [KDS Realtime] Mensagem recebida no componente:", payload)
+    
+    // Extrai terminal do payload de forma resiliente
+    const p = payload as Record<string, any> | null
+    const incomingTerminal = p && (
+      p.terminalId ?? p.terminal ?? p?.data?.terminalId ?? p?.data?.terminal
+    )
+
+    console.log(`🔍 [KDS Realtime] Terminal atual: ${terminal}, Terminal do evento: ${incomingTerminal}`)
+
+    // Só refaz a busca se: (terminal atual é "all") ou (terminal do evento bate com o atual)
+    const shouldUpdate = terminal === 'all' || (
+      incomingTerminal !== undefined && String(incomingTerminal) === String(terminal)
+    )
+
+    if (!shouldUpdate) {
+      console.log("⏭️ [KDS Realtime] Ignorando evento - terminal não corresponde")
+      return
+    }
+
+    const now = Date.now()
+    if (now - lastRefetchRef.current > 500) {
+      lastRefetchRef.current = now
+      console.log("🔄 [KDS Realtime] Executando refetch...")
+      refetch()
+    } else {
+      console.log("⏸️ [KDS Realtime] Refetch ignorado - muito recente (throttle)")
+    }
+  }, [terminal, refetch])
+
+  // Realtime updates via WebSocket: refetch on payloads
+  useKdsRealtime({
+    companyId: Number(empresaId),
+    onMessage: handleWebSocketMessage,
+  })
 
   const formatDateTime = (date: Date) => {
     const weekdays = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"]
