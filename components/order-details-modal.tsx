@@ -45,6 +45,33 @@ export function OrderDetailsModal({ order, open, onOpenChange }: OrderDetailsMod
 
   const config = statusConfig[order.status]
 
+  // Função para verificar se um pedido está atrasado (usa status do backend e fallback local)
+  const isOrderDelayed = (order: PreparoProducao) => {
+    // Preferência: backend já informa o status de atraso
+    if (order.tempoPreparoStatus) {
+      switch (order.tempoPreparoStatus) {
+        case 'tempoEmAtraso':
+          return true
+        case 'tempoPreparoAtencao':
+        case 'tempoPreparoIndefinido':
+        case 'tempoPreparoOk':
+          return false
+      }
+    }
+
+    // Fallback: cálculo local (compatibilidade)
+    if (!order.dataHoraStatus || !order.tempoPreparo) return false
+    if (order.status === "preparoFinalizado" || order.status === "preparoCancelado") return false
+
+    const backendDate = new Date(order.dataHoraStatus)
+    const localDate = new Date(backendDate.getTime() + backendDate.getTimezoneOffset() * 60000)
+    const now = new Date()
+    const diffMinutes = (now.getTime() - localDate.getTime()) / (1000 * 60)
+    return diffMinutes > order.tempoPreparo
+  }
+
+  const isDelayed = isOrderDelayed(order)
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
@@ -63,7 +90,7 @@ export function OrderDetailsModal({ order, open, onOpenChange }: OrderDetailsMod
                 <span className="text-sm text-muted-foreground">Cliente: {order.clienteNome}</span>
               </div>
               <div className="text-sm text-muted-foreground">Comanda: {order.comandaNumero}</div>
-              {order.dataHoraStatus && (
+              {isDelayed && (
                 <div className="mt-2 inline-block rounded bg-red-100 px-2 py-1 text-xs font-medium text-red-800">
                   PEDIDO ATRASADO
                 </div>

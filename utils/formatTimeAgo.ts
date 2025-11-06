@@ -7,9 +7,12 @@ export function formatTimeAgo(dateString: string): string {
   if (!dateString) return ""
 
   try {
-    const date = new Date(dateString)
+    // ⚠️ Ajuste para compensar backend salvando hora local com sufixo Z
+    const backendDate = new Date(dateString)
+    const localDate = new Date(backendDate.getTime() + backendDate.getTimezoneOffset() * 60000)
+    
     const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
+    const diffMs = now.getTime() - localDate.getTime()
     const diffSeconds = Math.floor(diffMs / 1000)
     const diffMinutes = Math.floor(diffSeconds / 60)
     const diffHours = Math.floor(diffMinutes / 60)

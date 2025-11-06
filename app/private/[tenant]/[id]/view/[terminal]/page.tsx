@@ -113,20 +113,24 @@ export default function KitchenManagementPage() {
           console.warn('Erro ao reproduzir som:', error)
         })
 
-        // Mostra notificação toast discreta
+        // Mostra notificação toast mais visível
         const newOrdersCount = newOrders.length
         const orderLabel = newOrdersCount === 1 ? 'pedido' : 'pedidos'
         
-        toast.info(`Novo${newOrdersCount > 1 ? 's' : ''} ${orderLabel} recebido${newOrdersCount > 1 ? 's' : ''}`, {
+        toast.success(`🔔 Novo${newOrdersCount > 1 ? 's' : ''} ${orderLabel} recebido${newOrdersCount > 1 ? 's' : ''}`, {
           description: newOrdersCount === 1 
             ? `Pedido #${newOrders[0].preparoProducaoId} está aguardando produção`
             : `${newOrdersCount} novos pedidos aguardando produção`,
-          duration: 3000,
+          duration: 5000,
           position: 'top-right',
           style: {
             background: 'hsl(var(--background))',
-            border: '1px solid hsl(var(--border))',
+            border: '2px solid hsl(var(--primary))',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+            fontSize: '14px',
+            fontWeight: '600',
           },
+          className: 'notification-toast',
         })
       }
     }
