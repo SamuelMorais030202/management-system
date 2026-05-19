@@ -40,6 +40,25 @@ export interface OrderItem {
   modifiers?: string[]
 }
 
+const orderMatchesSearch = (order: PreparoProducao, search: string) => {
+  if (!search) return true
+
+  const searchableValues = [
+    order.preparoProducaoId,
+    order.keyId,
+    order.numero,
+    order.clienteNome,
+    order.garcom,
+    order.mesaNumero,
+    order.comandaNumero,
+    order.comandaId,
+  ]
+
+  return searchableValues.some(
+    (value) => value != null && String(value).toLowerCase().includes(search)
+  )
+}
+
 export default function KitchenManagementPage() {
   const params = useParams()
   const navigate = useNavigate()
@@ -255,11 +274,7 @@ export default function KitchenManagementPage() {
     }))
     .filter((order) => {
       const search = searchQuery.toLowerCase().trim()
-
-      const matchesSearch =
-        order.clienteNome.toLowerCase().includes(search) ||
-        String(order.keyId).includes(search) ||
-        order.garcom?.toLowerCase().includes(search)
+      const matchesSearch = orderMatchesSearch(order, search)
 
       let matchesFilter = false
       if (activeFilter === "all") {
@@ -410,7 +425,7 @@ export default function KitchenManagementPage() {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Buscar pedidos..."
+              placeholder="Pedido, cliente, mesa, comanda, garçom..."
               className="pl-9"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
