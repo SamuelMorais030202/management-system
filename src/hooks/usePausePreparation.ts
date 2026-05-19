@@ -12,25 +12,8 @@ export function usePausePreparation(companyId: number, id: number) {
       return data;
     },
     onSuccess: () => {
-      // Invalida apenas as queries de contagem, não as de pedidos paginados
       queryClient.invalidateQueries({ queryKey: ['order-count'] })
-      
-      // Atualiza o cache das queries de pedidos sem refetch
-      queryClient.setQueriesData(
-        { queryKey: ['load-orders-by-terminal'] },
-        (oldData: any) => {
-          if (!oldData?.data) return oldData
-          
-          return {
-            ...oldData,
-            data: oldData.data.map((order: any) => 
-              order.preparoProducaoId === id 
-                ? { ...order, status: 'preparoPausado' }
-                : order
-            )
-          }
-        }
-      )
+      queryClient.invalidateQueries({ queryKey: ['load-orders-by-terminal'] })
     }
   })
 }

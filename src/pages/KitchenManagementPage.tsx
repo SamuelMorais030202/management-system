@@ -7,6 +7,7 @@ import { FilterBar } from "@/components/filter-bar"
 import { LocationSelectorModal } from "@/components/location-selector-modal"
 import { KitchenLoading } from "@/components/kitchen-loading"
 import { useParams, useNavigate } from "react-router-dom"
+import { useQueryClient } from "@tanstack/react-query"
 import { useLoadOrdersByTerminal, PreparoProducao, TempoPreparoStatus } from "@/hooks/useLoadOrdersByTerminal"
 import { getLocationTypeColor } from "@/utils/getLocationTypeColor"
 import { useLoadTerminals } from "@/hooks/useLoadTerminals"
@@ -40,6 +41,14 @@ export interface OrderItem {
   modifiers?: string[]
 }
 
+const dedupeOrdersById = (orders: PreparoProducao[]) => {
+  const byId = new Map<number, PreparoProducao>()
+  for (const order of orders) {
+    byId.set(order.preparoProducaoId, order)
+  }
+  return Array.from(byId.values())
+}
+
 const orderMatchesSearch = (order: PreparoProducao, search: string) => {
   if (!search) return true
 
@@ -62,6 +71,7 @@ const orderMatchesSearch = (order: PreparoProducao, search: string) => {
 export default function KitchenManagementPage() {
   const params = useParams()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const tenant = params.tenant?.toString();
   const terminal = params.terminal?.toString();
@@ -267,7 +277,7 @@ export default function KitchenManagementPage() {
 
   const filteredOrders =
   data?.data &&
-  data.data
+  dedupeOrdersById(data.data)
     .map((order) => ({
       ...order,
       atrasado: isOrderDelayed(order)
@@ -408,10 +418,15 @@ export default function KitchenManagementPage() {
   }
 
   const handleFilterChange = (filter: string) => {
+    if (filter === activeFilter) return
+
+    setCurrentPage(1)
     setActiveFilter(filter)
-    if (filter !== activeFilter) {
-      setCurrentPage(1)
-    }
+
+    // Limpa caches de listagem para não misturar pedidos entre tabs
+    queryClient.removeQueries({
+      queryKey: ['load-orders-by-terminal', terminal || 'all', filterStartDate, filterEndDate],
+    })
   }
 
   return (
@@ -497,7 +512,7 @@ export default function KitchenManagementPage() {
         <div className="grid grid-cols-1 gap-4 min-[640px]:grid-cols-2 min-[1024px]:grid-cols-3 min-[1280px]:grid-cols-4 min-[1536px]:grid-cols-5">
           {filteredOrders && filteredOrders.length > 0 ? (
             filteredOrders.map((order) => (
-              <OrderCard key={order.keyId} order={order} />
+              <OrderCard key={order.preparoProducaoId} order={order} />
             ))
           ) : (
             <div className="col-span-full flex justify-center py-12">
