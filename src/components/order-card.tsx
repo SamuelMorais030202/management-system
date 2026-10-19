@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import { OrderDetailsModal } from "./order-details-modal"
 import { ObservationModal } from "./observation-modal"
+import { ConfirmFinishDialog } from "./confirm-finish-dialog"
 import { PreparoProducao } from "@/hooks/useLoadOrdersByTerminal"
 import { useStartPreparation } from "@/hooks/useStartPreparation"
 import { useParams } from "react-router-dom"
@@ -58,11 +59,12 @@ export function OrderCard({ order, className, isUpdating = false }: OrderCardPro
   const [currentStatus, setCurrentStatus] = useState(order.status)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [showObservationModal, setShowObservationModal] = useState(false)
+  const [showFinishConfirm, setShowFinishConfirm] = useState(false)
   const [selectedObservation, setSelectedObservation] = useState<{ text: string; type: "general" | "item"; title: string } | null>(null)
   const [timeAgo, setTimeAgo] = useState(formatTimeAgo(order.createdAt))
 
   const { mutate: startPreparation } = useStartPreparation(Number(empresaId || 0), order.preparoProducaoId)
-  const { mutate: finishPreparation } = useFinishPreparation(Number(empresaId || 0), order.preparoProducaoId)
+  const { mutate: finishPreparation, isPending: isFinishing } = useFinishPreparation(Number(empresaId || 0), order.preparoProducaoId)
   const { mutate: pausePreparation } = usePausePreparation(Number(empresaId || 0), order.preparoProducaoId)
   const isStatusUpdating = useIsOrderStatusUpdating(order.preparoProducaoId)
 
@@ -154,6 +156,11 @@ export function OrderCard({ order, className, isUpdating = false }: OrderCardPro
 
   const handleFinishCooking = () => {
     if (isBusy) return
+    setShowFinishConfirm(true)
+  }
+
+  const confirmFinishCooking = () => {
+    setShowFinishConfirm(false)
     setIsRunning(false)
     finishPreparation(undefined, {
       onSuccess: () => {
@@ -552,6 +559,14 @@ export function OrderCard({ order, className, isUpdating = false }: OrderCardPro
       </Card>
 
       <OrderDetailsModal order={order} open={showDetailsModal} onOpenChange={setShowDetailsModal} />
+
+      <ConfirmFinishDialog
+        open={showFinishConfirm}
+        orderId={order.preparoProducaoId}
+        onOpenChange={setShowFinishConfirm}
+        onConfirm={confirmFinishCooking}
+        isConfirming={isFinishing}
+      />
       
       {selectedObservation && (
         <ObservationModal

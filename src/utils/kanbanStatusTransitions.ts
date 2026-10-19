@@ -2,18 +2,18 @@ import type { ItemStatus } from "@/hooks/useLoadOrdersByTerminal"
 
 export type KanbanColumnId =
   | "aguardando"
+  | "atrasados"
   | "emProducao"
   | "pausado"
-  | "atrasados"
   | "finalizados"
 
 export type PreparationAction = "start" | "pause" | "finish"
 
 const COLUMN_TARGET_STATUS: Record<KanbanColumnId, ItemStatus | null> = {
   aguardando: "preparoAguardandoProducao",
+  atrasados: "preparoAguardandoProducao",
   emProducao: "preparoEmProducao",
   pausado: "preparoPausado",
-  atrasados: "preparoAguardandoProducao",
   finalizados: "preparoFinalizado",
 }
 
@@ -43,7 +43,12 @@ export function getActionForColumnDrop(
       if (currentStatus === "preparoEmProducao") return "pause"
       return null
     case "finalizados":
-      if (currentStatus === "preparoEmProducao") return "finish"
+      if (
+        currentStatus === "preparoEmProducao" ||
+        currentStatus === "preparoPausado"
+      ) {
+        return "finish"
+      }
       return null
     case "aguardando":
     case "atrasados":
@@ -63,7 +68,11 @@ export function getDropRejectMessage(
   if (targetColumn === "aguardando" || targetColumn === "atrasados") {
     return "Não é possível voltar o pedido para esta coluna"
   }
-  if (targetColumn === "finalizados" && currentStatus !== "preparoEmProducao") {
+  if (
+    targetColumn === "finalizados" &&
+    currentStatus !== "preparoEmProducao" &&
+    currentStatus !== "preparoPausado"
+  ) {
     return "Só é possível finalizar pedidos em produção"
   }
   if (targetColumn === "pausado" && currentStatus !== "preparoEmProducao") {

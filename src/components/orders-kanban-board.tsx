@@ -18,6 +18,7 @@ import { useParams } from "react-router-dom"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { OrderCard, statusConfig } from "@/components/order-card"
+import { ConfirmFinishDialog } from "@/components/confirm-finish-dialog"
 import { usePreparationAction } from "@/hooks/usePreparationAction"
 import { useIsOrderStatusUpdating } from "@/hooks/useIsOrderStatusUpdating"
 import { cn } from "@/lib/utils"
@@ -26,6 +27,7 @@ import {
   getActionForColumnDrop,
   getDropRejectMessage,
   type KanbanColumnId,
+  type PreparationAction,
 } from "@/utils/kanbanStatusTransitions"
 
 type KanbanOrder = PreparoProducao & { atrasado?: boolean }
@@ -43,6 +45,11 @@ const COLUMNS: KanbanColumnDef[] = [
     headerClass: `${statusConfig.preparoAguardandoProducao.bg} ${statusConfig.preparoAguardandoProducao.text}`,
   },
   {
+    id: "atrasados",
+    label: "Atrasados",
+    headerClass: "bg-[#DC2626] text-white",
+  },
+  {
     id: "emProducao",
     label: "Em Produção",
     headerClass: `${statusConfig.preparoEmProducao.bg} ${statusConfig.preparoEmProducao.text}`,
@@ -51,11 +58,6 @@ const COLUMNS: KanbanColumnDef[] = [
     id: "pausado",
     label: "Pausado",
     headerClass: `${statusConfig.preparoPausado.bg} ${statusConfig.preparoPausado.text}`,
-  },
-  {
-    id: "atrasados",
-    label: "Atrasados",
-    headerClass: "bg-[#DC2626] text-white",
   },
   {
     id: "finalizados",
@@ -86,9 +88,9 @@ function getColumnId(order: KanbanOrder): KanbanColumnId | null {
 function partitionOrders(orders: KanbanOrder[]): Record<KanbanColumnId, KanbanOrder[]> {
   const buckets: Record<KanbanColumnId, KanbanOrder[]> = {
     aguardando: [],
+    atrasados: [],
     emProducao: [],
     pausado: [],
-    atrasados: [],
     finalizados: [],
   }
 
@@ -164,7 +166,7 @@ function KanbanColumn({
         </span>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto p-2">
+      <div className="scrollbar-thin flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto p-2">
         {orders.length > 0 ? (
           orders.map((order) => (
             <DraggableOrderCard key={order.preparoProducaoId} order={order} />
@@ -192,10 +194,12 @@ export function OrdersKanbanBoard({
 }: OrdersKanbanBoardProps) {
   const params = useParams()
   const empresaId = Number(params.id || 0)
-  const { mutateAsync: changeStatus } = usePreparationAction(empresaId)
+  const { mutateAsync: changeStatus, isPending: isChangingStatus } =
+    usePreparationAction(empresaId)
 
   const [activeOrder, setActiveOrder] = useState<KanbanOrder | null>(null)
   const [overColumnId, setOverColumnId] = useState<KanbanColumnId | null>(null)
+  const [finishConfirmOrder, setFinishConfirmOrder] = useState<KanbanOrder | null>(null)
 
   const columns = useMemo(() => partitionOrders(orders), [orders])
   const totalVisible = COLUMNS.reduce((sum, col) => sum + columns[col.id].length, 0)
@@ -224,6 +228,30 @@ export function OrdersKanbanBoard({
     } else {
       setOverColumnId(null)
     }
+  }
+
+  const applyStatusChange = async (order: KanbanOrder, action: PreparationAction) => {
+    const labels: Record<PreparationAction, string> = {
+      start: "em produção",
+      pause: "pausado",
+      finish: "finalizado",
+    }
+
+    try {
+      await changeStatus({ orderId: order.preparoProducaoId, action })
+      toast.success(`Pedido #${order.preparoProducaoId} movido para ${labels[action]}`)
+    } catch {
+      toast.error("Não foi possível atualizar o status", {
+        description: `O pedido #${order.preparoProducaoId} voltou para a coluna anterior.`,
+      })
+    }
+  }
+
+  const handleConfirmFinish = async () => {
+    if (!finishConfirmOrder) return
+    const order = finishConfirmOrder
+    setFinishConfirmOrder(null)
+    await applyStatusChange(order, "finish")
   }
 
   const handleDragEnd = async (event: DragEndEvent) => {
@@ -259,21 +287,13 @@ export function OrdersKanbanBoard({
       return
     }
 
-    const labels: Record<typeof action, string> = {
-      start: "em produção",
-      pause: "pausado",
-      finish: "finalizado",
+    // Finalizar é definitivo — pede confirmação antes de aplicar
+    if (action === "finish") {
+      setFinishConfirmOrder(order)
+      return
     }
 
-    try {
-      // Update otimista já move o card no onMutate; aqui só confirma ou reverte (onError).
-      await changeStatus({ orderId: order.preparoProducaoId, action })
-      toast.success(`Pedido #${order.preparoProducaoId} movido para ${labels[action]}`)
-    } catch {
-      toast.error("Não foi possível atualizar o status", {
-        description: `O pedido #${order.preparoProducaoId} voltou para a coluna anterior.`,
-      })
-    }
+    await applyStatusChange(order, action)
   }
 
   const handleDragCancel = () => {
@@ -315,7 +335,7 @@ export function OrdersKanbanBoard({
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      <div className="flex h-[calc(100vh-13rem)] gap-3 overflow-x-auto overflow-y-hidden pb-1">
+      <div className="scrollbar-thin flex h-[calc(100vh-13rem)] gap-3 overflow-x-auto overflow-y-hidden pb-1">
         {COLUMNS.map((column) => (
           <KanbanColumn
             key={column.id}
@@ -333,6 +353,16 @@ export function OrdersKanbanBoard({
           </div>
         ) : null}
       </DragOverlay>
+
+      <ConfirmFinishDialog
+        open={finishConfirmOrder != null}
+        orderId={finishConfirmOrder?.preparoProducaoId ?? null}
+        onOpenChange={(open) => {
+          if (!open) setFinishConfirmOrder(null)
+        }}
+        onConfirm={handleConfirmFinish}
+        isConfirming={isChangingStatus}
+      />
     </DndContext>
   )
 }

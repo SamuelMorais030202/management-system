@@ -502,7 +502,7 @@ export default function KitchenManagementPage() {
       </div>
         {!isKanban && (
           <div className="border-t px-4 py-3 sm:px-6">
-            <div className="overflow-x-auto">
+            <div className="scrollbar-thin overflow-x-auto">
               <FilterBar activeFilter={activeFilter} onFilterChange={handleFilterChange} counts={filterCounts} />
             </div>
           </div>
