@@ -34,9 +34,9 @@ export interface ItemPreparo {
   observacao: string | null;
   qtde: number;
   numeroItem: number;
-  status: ItemStatus; // Usa o tipo definido acima
+  status: ItemStatus;
   nome: string;
-  adicionais: Adicionais[]; // Tipar melhor se souber a estrutura
+  adicionais: Adicionais[];
 }
 
 export interface PreparoProducao {
@@ -45,12 +45,12 @@ export interface PreparoProducao {
   pdvId: number;
   terminalId: number;
   keyId: number;
-  status: ItemStatus; // Usa o tipo definido acima
+  status: ItemStatus;
   numero: string;
   clienteNome: string;
   origem: string;
   observacao: string | null;
-  dataHoraStatus: string | null; // String ISO 8601 ou null
+  dataHoraStatus: string | null;
   garcomId: number | null;
   createdAt: string;
   updatedAt: string;
@@ -65,7 +65,7 @@ export interface PreparoProducao {
   contaNumero: number | null;
   exibirNumeroCartaoConta: boolean;
   garcom: string | null;
-  items: ItemPreparo[]; // Array de itens
+  items: ItemPreparo[];
   tempoPreparoStatus: TempoPreparoStatus;
 }
 
@@ -81,6 +81,91 @@ export interface OrdersResponse {
   pagination: PaginationInfo;
 }
 
+export interface FetchOrdersParams {
+  terminal: string;
+  companyId: number;
+  dataInicial?: string;
+  dataFinal?: string;
+  page?: number;
+  limit?: number;
+  status?: string;
+}
+
+const formatDateToBR = (date: string) => {
+  const [y, m, d] = date.split("-");
+  return `${d}/${m}/${y}`;
+};
+
+export async function fetchOrdersByTerminal({
+  terminal,
+  companyId,
+  dataInicial,
+  dataFinal,
+  page = 1,
+  limit = 20,
+  status,
+}: FetchOrdersParams): Promise<OrdersResponse> {
+  if (!terminal || !companyId) throw new Error("Terminal é obrigatório");
+
+  const params = new URLSearchParams();
+
+  if (terminal !== "all") params.append("terminalId", terminal);
+
+  params.append("page", page.toString());
+  params.append("limit", limit.toString());
+
+  if (status && status !== "all" && status !== "atrasado" && status !== "preparoEmAtraso") {
+    params.append("where", `status='${status}'`);
+  }
+
+  if (status === "preparoEmAtraso") {
+    params.append("where", `tempo_preparo_status='tempoEmAtraso'`);
+  }
+
+  if (dataInicial) params.append("dataInicial", formatDateToBR(dataInicial));
+  if (dataFinal) params.append("dataFinal", formatDateToBR(dataFinal));
+
+  const queryString = params.toString() ? `?${params.toString()}` : "";
+  const response = await api.get(`/shared/kds/${companyId}/preparos/${queryString}`);
+
+  const totalItems = parseInt(response.headers["x-total-count"] || "0");
+  const itemsPerPage = parseInt(response.headers["x-per-page"] || limit.toString());
+  const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage) || 1);
+
+  return {
+    data: response.data,
+    pagination: {
+      currentPage: page,
+      totalPages,
+      totalItems,
+      itemsPerPage,
+    },
+  };
+}
+
+/** Busca todas as páginas do filtro atual (usado pela pesquisa em texto). */
+export async function fetchAllOrdersByTerminal(
+  params: Omit<FetchOrdersParams, "page" | "limit"> & { limit?: number }
+): Promise<PreparoProducao[]> {
+  const limit = params.limit ?? 100;
+  const firstPage = await fetchOrdersByTerminal({ ...params, page: 1, limit });
+  const allOrders = [...firstPage.data];
+  const totalPages = firstPage.pagination.totalPages;
+
+  if (totalPages <= 1) return allOrders;
+
+  const remainingPages = Array.from({ length: totalPages - 1 }, (_, i) => i + 2);
+  const pageResults = await Promise.all(
+    remainingPages.map((page) => fetchOrdersByTerminal({ ...params, page, limit }))
+  );
+
+  for (const result of pageResults) {
+    allOrders.push(...result.data);
+  }
+
+  return allOrders;
+}
+
 export function useLoadOrdersByTerminal(
   terminal: string,
   companyId: number | undefined,
@@ -91,63 +176,21 @@ export function useLoadOrdersByTerminal(
   status?: string,
 ) {
   return useQuery<OrdersResponse>({
-    queryKey: ['load-orders-by-terminal', terminal, dataInicial, dataFinal, page, limit, status],
+    queryKey: ["load-orders-by-terminal", terminal, dataInicial, dataFinal, page, limit, status],
     queryFn: async () => {
-      if (!terminal || !companyId) throw new Error("Terminal é obrigatório");
-
-      // Função auxiliar para converter YYYY-MM-DD -> DD/MM/YYYY
-      const formatDateToBR = (date: string) => {
-        const [y, m, d] = date.split("-");
-        return `${d}/${m}/${y}`;
-      };
-
-      const params = new URLSearchParams();
-
-      // ✅ Corrigido: backend espera terminalId, não terminal_id
-      if (terminal !== 'all') params.append('terminalId', terminal);
-
-      // ✅ Adiciona página e limite
-      params.append('page', page.toString());
-      params.append('limit', limit.toString());
-
-      // Filtra por status quando não for "all" nem o filtro especial "atrasado"
-      if (status && status !== 'all' && status !== 'atrasado' && status !== 'preparoEmAtraso') {
-        params.append('where', `status='${status}'`);
-      }
-
-      if (status && status === 'preparoEmAtraso') {
-        params.append('where', `tempo_preparo_status='tempoEmAtraso'`);
-      }
-
-      // ✅ Corrigido: converte datas para formato dd/MM/yyyy
-      if (dataInicial) params.append('dataInicial', formatDateToBR(dataInicial));
-      if (dataFinal) params.append('dataFinal', formatDateToBR(dataFinal));
-
-      const queryString = params.toString() ? `?${params.toString()}` : '';
-
-      console.log("🔍 Query string gerada:", queryString);
-
-      const response = await api.get(`/shared/kds/${companyId}/preparos/${queryString}`);
-      
-      // Extrai informações de paginação dos headers
-      const totalItems = parseInt(response.headers['x-total-count'] || '0');
-      const itemsPerPage = parseInt(response.headers['x-per-page'] || limit.toString());
-      const totalPages = Math.ceil(totalItems / itemsPerPage);
-
-      return {
-        data: response.data,
-        pagination: {
-          currentPage: page,
-          totalPages,
-          totalItems,
-          itemsPerPage
-        }
-      };
+      if (!companyId) throw new Error("Empresa é obrigatória");
+      return fetchOrdersByTerminal({
+        terminal,
+        companyId,
+        dataInicial,
+        dataFinal,
+        page,
+        limit,
+        status,
+      });
     },
-    // Remove placeholderData para evitar mostrar dados antigos quando o filtro muda
-    // Quando o status muda, a queryKey muda e o React Query trata como nova query
-    // Sem placeholderData, não mantemos dados de outros status durante o carregamento
     staleTime: 5_000,
+    placeholderData: (previousData) => previousData,
     enabled: !!terminal && !!companyId,
   });
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { Printer, Pause, Play, ChevronDown, AlertCircle, FileText, Clock } from "lucide-react"
+import { Printer, Pause, Play, ChevronDown, AlertCircle, FileText, Clock, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
@@ -10,12 +10,16 @@ import { useStartPreparation } from "@/hooks/useStartPreparation"
 import { useParams } from "react-router-dom"
 import { useFinishPreparation } from "@/hooks/useFinishPreparation"
 import { usePausePreparation } from "@/hooks/usePausePreparation"
+import { useIsOrderStatusUpdating } from "@/hooks/useIsOrderStatusUpdating"
 import { handlePrintOrder } from "@/utils/handlePrint"
 import { toast } from "sonner"
 import { formatTimeAgo } from "@/utils/formatTimeAgo"
 
 interface OrderCardProps {
   order: PreparoProducao & { atrasado?: boolean }
+  className?: string
+  /** Loading externo (ex.: drag-and-drop no Kanban) */
+  isUpdating?: boolean
 }
 
 const MAX_ITEMS_DISPLAY = 3
@@ -45,7 +49,7 @@ const delayedButtonColorConfig: Record<string, string> = {
   preparoFinalizado: "bg-[#10B981] hover:bg-[#059669] text-white", // Verde para finalizados (não muda)
 }
 
-export function OrderCard({ order }: OrderCardProps) {
+export function OrderCard({ order, className, isUpdating = false }: OrderCardProps) {
   const params = useParams()
   const empresaId = params.id?.toString()
 
@@ -60,6 +64,9 @@ export function OrderCard({ order }: OrderCardProps) {
   const { mutate: startPreparation } = useStartPreparation(Number(empresaId || 0), order.preparoProducaoId)
   const { mutate: finishPreparation } = useFinishPreparation(Number(empresaId || 0), order.preparoProducaoId)
   const { mutate: pausePreparation } = usePausePreparation(Number(empresaId || 0), order.preparoProducaoId)
+  const isStatusUpdating = useIsOrderStatusUpdating(order.preparoProducaoId)
+
+  const isBusy = isUpdating || isStatusUpdating
 
   const formatSeconds = (totalSeconds: number) => {
     const hours = Math.floor(totalSeconds / 3600)
@@ -127,7 +134,7 @@ export function OrderCard({ order }: OrderCardProps) {
   }, [order.createdAt])
 
   const handleStartCooking = () => {
-    if (currentStatus === "preparoFinalizado") return
+    if (currentStatus === "preparoFinalizado" || isBusy) return
     setIsRunning(true)
     startPreparation(undefined, {
       onSuccess: () => {
@@ -138,7 +145,7 @@ export function OrderCard({ order }: OrderCardProps) {
       },
       onError: () => {
         toast.error("Erro ao iniciar preparo", {
-          description: "Não foi possível iniciar o preparo. Tente novamente.",
+          description: "Não foi possível iniciar o preparo. O pedido voltou ao status anterior.",
         })
         setIsRunning(false)
       },
@@ -146,6 +153,7 @@ export function OrderCard({ order }: OrderCardProps) {
   }
 
   const handleFinishCooking = () => {
+    if (isBusy) return
     setIsRunning(false)
     finishPreparation(undefined, {
       onSuccess: () => {
@@ -156,7 +164,7 @@ export function OrderCard({ order }: OrderCardProps) {
       },
       onError: () => {
         toast.error("Erro ao finalizar preparo", {
-          description: "Não foi possível finalizar o preparo. Tente novamente.",
+          description: "Não foi possível finalizar o preparo. O pedido voltou ao status anterior.",
         })
         setIsRunning(true)
       },
@@ -164,6 +172,7 @@ export function OrderCard({ order }: OrderCardProps) {
   }
 
   const handlePauseCooking = () => {
+    if (isBusy) return
     setIsRunning(false)
     pausePreparation(undefined, {
       onSuccess: () => {
@@ -174,7 +183,7 @@ export function OrderCard({ order }: OrderCardProps) {
       },
       onError: () => {
         toast.error("Erro ao pausar preparo", {
-          description: "Não foi possível pausar o preparo. Tente novamente.",
+          description: "Não foi possível pausar o preparo. O pedido voltou ao status anterior.",
         })
         setIsRunning(true)
       },
@@ -182,7 +191,7 @@ export function OrderCard({ order }: OrderCardProps) {
   }
 
   const handleResumeCooking = () => {
-    if (currentStatus === "preparoFinalizado") return
+    if (currentStatus === "preparoFinalizado" || isBusy) return
     setIsRunning(true)
     startPreparation(undefined, {
       onSuccess: () => {
@@ -193,7 +202,7 @@ export function OrderCard({ order }: OrderCardProps) {
       },
       onError: () => {
         toast.error("Erro ao retomar preparo", {
-          description: "Não foi possível retomar o preparo. Tente novamente.",
+          description: "Não foi possível retomar o preparo. O pedido voltou ao status anterior.",
         })
         setIsRunning(false)
       },
@@ -273,7 +282,14 @@ export function OrderCard({ order }: OrderCardProps) {
 
   return (
     <>
-      <Card className="flex min-w-[280px] max-w-full flex-col overflow-hidden">
+      <Card className={cn("relative flex min-w-0 w-full max-w-full flex-col gap-0 overflow-hidden py-0", className)}>
+        {isBusy && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-background/80 backdrop-blur-[1px]">
+            <Loader2 className="h-7 w-7 animate-spin text-primary" />
+            <span className="text-xs font-medium text-muted-foreground">Atualizando...</span>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex flex-col gap-2 border-b p-3 sm:flex-row sm:items-start sm:justify-between sm:p-4">
           <div className="flex-1 min-w-0 flex flex-col gap-1">
@@ -474,6 +490,7 @@ export function OrderCard({ order }: OrderCardProps) {
               <>
                 <Button
                   onClick={handleFinishCooking}
+                  disabled={isBusy}
                   className={cn("flex-1 min-w-0 text-[10px] text-white sm:text-sm", getButtonColor())}
                   size="sm"
                 >
@@ -482,6 +499,7 @@ export function OrderCard({ order }: OrderCardProps) {
 
                 <Button
                   onClick={handlePauseCooking}
+                  disabled={isBusy}
                   variant="outline"
                   size="icon"
                   className="h-7 w-7 shrink-0 bg-transparent sm:h-9 sm:w-9"
@@ -493,6 +511,7 @@ export function OrderCard({ order }: OrderCardProps) {
             ) : currentStatus === "preparoPausado" ? (
               <Button
                 onClick={handleResumeCooking}
+                disabled={isBusy}
                 className={cn("flex-1 min-w-0 text-[10px] text-white sm:text-sm", getButtonColor())}
                 size="sm"
               >
@@ -510,6 +529,7 @@ export function OrderCard({ order }: OrderCardProps) {
             ) : (
               <Button
                 onClick={handleStartCooking}
+                disabled={isBusy}
                 className={cn("flex-1 min-w-0 text-[10px] text-white sm:text-sm", getButtonColor())}
                 size="sm"
               >
@@ -522,6 +542,7 @@ export function OrderCard({ order }: OrderCardProps) {
               size="icon"
               className="h-7 w-7 shrink-0 bg-transparent sm:h-9 sm:w-9 cursor-pointer"
               onClick={() => handlePrintOrder(order)}
+              disabled={isBusy}
               title="Imprimir Pedido"
             >
               <Printer className="h-3 w-3 sm:h-4 sm:w-4" />

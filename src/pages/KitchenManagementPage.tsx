@@ -6,9 +6,13 @@ import { OrderCard } from "@/components/order-card"
 import { FilterBar } from "@/components/filter-bar"
 import { LocationSelectorModal } from "@/components/location-selector-modal"
 import { KitchenLoading } from "@/components/kitchen-loading"
+import { ViewModeToggle } from "@/components/view-mode-toggle"
+import { OrdersKanbanBoard } from "@/components/orders-kanban-board"
 import { useParams, useNavigate } from "react-router-dom"
 import { useQueryClient } from "@tanstack/react-query"
 import { useLoadOrdersByTerminal, PreparoProducao, TempoPreparoStatus } from "@/hooks/useLoadOrdersByTerminal"
+import { useSearchOrdersAcrossPages } from "@/hooks/useSearchOrdersAcrossPages"
+import { usePersistedViewMode } from "@/hooks/usePersistedViewMode"
 import { getLocationTypeColor } from "@/utils/getLocationTypeColor"
 import { useLoadTerminals } from "@/hooks/useLoadTerminals"
 import { useKdsRealtime } from "@/hooks/useKdsRealtime"
@@ -16,6 +20,9 @@ import { useOrderCount } from "@/hooks/useOrderCount"
 import { WebSocketStatus } from "@/components/websocket-status"
 import { toast } from "sonner"
 import { playNotificationSound, initAudioContext } from "@/utils/sound"
+import { dedupeOrdersById, orderMatchesSearch } from "@/utils/orderSearch"
+
+const KANBAN_ITEMS_PER_PAGE = 100
 
 export interface Order {
   id: string
@@ -41,33 +48,6 @@ export interface OrderItem {
   modifiers?: string[]
 }
 
-const dedupeOrdersById = (orders: PreparoProducao[]) => {
-  const byId = new Map<number, PreparoProducao>()
-  for (const order of orders) {
-    byId.set(order.preparoProducaoId, order)
-  }
-  return Array.from(byId.values())
-}
-
-const orderMatchesSearch = (order: PreparoProducao, search: string) => {
-  if (!search) return true
-
-  const searchableValues = [
-    order.preparoProducaoId,
-    order.keyId,
-    order.numero,
-    order.clienteNome,
-    order.garcom,
-    order.mesaNumero,
-    order.comandaNumero,
-    order.comandaId,
-  ]
-
-  return searchableValues.some(
-    (value) => value != null && String(value).toLowerCase().includes(search)
-  )
-}
-
 export default function KitchenManagementPage() {
   const params = useParams()
   const navigate = useNavigate()
@@ -87,9 +67,13 @@ export default function KitchenManagementPage() {
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false)
   const [selectedLocationId, setSelectedLocationId] = useState<number | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
-  const [itemsPerPage, setItemsPerPage] = useState(20)
+  const [listItemsPerPage, setListItemsPerPage] = useState(20)
   const [isSearching, setIsSearching] = useState(false)
   const [isChangingPage, setIsChangingPage] = useState(false)
+  const { viewMode, setViewMode } = usePersistedViewMode()
+  const isKanban = viewMode === "kanban"
+  const itemsPerPage = isKanban ? KANBAN_ITEMS_PER_PAGE : listItemsPerPage
+  const effectiveFilter = isKanban ? "all" : activeFilter
 
   useEffect(() => {
     if (terminal && terminal !== 'all') {
@@ -99,71 +83,95 @@ export default function KitchenManagementPage() {
     }
   }, [terminal])
 
-  const { data, refetch, isFetching } = useLoadOrdersByTerminal(terminal || 'all', Number(empresaId || 0), filterStartDate, filterEndDate, currentPage, itemsPerPage, activeFilter)
+  useEffect(() => {
+    if (!isKanban) return
+    if (activeFilter !== "all") {
+      setActiveFilter("all")
+    }
+    setCurrentPage(1)
+  }, [isKanban, activeFilter])
+
+  const { data, refetch, isPending: isOrdersPending } = useLoadOrdersByTerminal(terminal || 'all', Number(empresaId || 0), filterStartDate, filterEndDate, currentPage, itemsPerPage, effectiveFilter)
   const { data: terminals } = useLoadTerminals(Number(empresaId || 0))
   const { data: ordersCount } = useOrderCount(terminal || 'all', Number(empresaId || 0), filterStartDate, filterEndDate)
 
-  // Ref para armazenar IDs de pedidos anteriores para detectar novos
-  const previousOrderIdsRef = useRef<Set<number>>(new Set())
-  const isInitialLoadRef = useRef<boolean>(true)
+  const hasTextSearch = searchQuery.trim().length > 0
+  const {
+    data: searchResults,
+    isFetching: isSearchFetching,
+    isDebouncing: isSearchDebouncing,
+  } = useSearchOrdersAcrossPages({
+    terminal: terminal || "all",
+    companyId: Number(empresaId || 0),
+    dataInicial: filterStartDate,
+    dataFinal: filterEndDate,
+    status: effectiveFilter,
+    searchQuery,
+  })
 
-  // Detecta novos pedidos e mostra notificação
+  // IDs já vistos na sessão — troca de tab/página não deve disparar "novo pedido"
+  const seenOrderIdsRef = useRef<Set<number>>(new Set())
+  const skipNewOrderNotifyRef = useRef(true)
+
+  // Reinicia a base ao mudar contexto de dados (terminal/período)
   useEffect(() => {
-    if (!data?.data || data.data.length === 0) {
-      // Se não há dados, atualiza a ref com conjunto vazio
-      previousOrderIdsRef.current = new Set()
+    seenOrderIdsRef.current = new Set()
+    skipNewOrderNotifyRef.current = true
+  }, [terminal, filterStartDate, filterEndDate])
+
+  // Ignora o próximo resultado ao mudar tab, página, modo ou tamanho da página
+  useEffect(() => {
+    skipNewOrderNotifyRef.current = true
+  }, [effectiveFilter, currentPage, itemsPerPage, viewMode])
+
+  // Detecta novos pedidos reais (não troca de filtro)
+  useEffect(() => {
+    if (!data?.data) return
+
+    const incoming = data.data
+    const unseenAguardando = incoming.filter(
+      (order) =>
+        !seenOrderIdsRef.current.has(order.preparoProducaoId) &&
+        order.status === "preparoAguardandoProducao",
+    )
+
+    for (const order of incoming) {
+      seenOrderIdsRef.current.add(order.preparoProducaoId)
+    }
+
+    if (skipNewOrderNotifyRef.current) {
+      skipNewOrderNotifyRef.current = false
       return
     }
 
-    // Cria conjunto com IDs atuais
-    const currentOrderIds = new Set(data.data.map((order) => order.preparoProducaoId))
-    
-    // Ignora a primeira carga (carregamento inicial) para não tocar som ao carregar a página
-    if (isInitialLoadRef.current) {
-      isInitialLoadRef.current = false
-      previousOrderIdsRef.current = currentOrderIds
-      return
-    }
-    
-    // Se já temos pedidos anteriores, compara para detectar novos
-    if (previousOrderIdsRef.current.size > 0) {
-      // Encontra novos pedidos (estão nos atuais mas não nos anteriores)
-      const newOrders = data.data.filter(
-        (order) => !previousOrderIdsRef.current.has(order.preparoProducaoId)
-      )
+    if (unseenAguardando.length === 0) return
 
-      // Se há novos pedidos, mostra notificação
-      if (newOrders.length > 0) {
-        // Toca som discreto (apenas se não for carregamento inicial)
-        // Não precisa aguardar, executa em background
-        playNotificationSound('new-order').catch((error) => {
-          console.warn('Erro ao reproduzir som:', error)
-        })
+    playNotificationSound("new-order").catch((error) => {
+      console.warn("Erro ao reproduzir som:", error)
+    })
 
-        // Mostra notificação toast mais visível
-        const newOrdersCount = newOrders.length
-        const orderLabel = newOrdersCount === 1 ? 'pedido' : 'pedidos'
-        
-        toast.success(`🔔 Novo${newOrdersCount > 1 ? 's' : ''} ${orderLabel} recebido${newOrdersCount > 1 ? 's' : ''}`, {
-          description: newOrdersCount === 1 
-            ? `Pedido #${newOrders[0].preparoProducaoId} está aguardando produção`
+    const newOrdersCount = unseenAguardando.length
+    const orderLabel = newOrdersCount === 1 ? "pedido" : "pedidos"
+
+    toast.success(
+      `🔔 Novo${newOrdersCount > 1 ? "s" : ""} ${orderLabel} recebido${newOrdersCount > 1 ? "s" : ""}`,
+      {
+        description:
+          newOrdersCount === 1
+            ? `Pedido #${unseenAguardando[0].preparoProducaoId} está aguardando produção`
             : `${newOrdersCount} novos pedidos aguardando produção`,
-          duration: 5000,
-          position: 'top-right',
-          style: {
-            background: 'hsl(var(--background))',
-            border: '2px solid hsl(var(--primary))',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-            fontSize: '14px',
-            fontWeight: '600',
-          },
-          className: 'notification-toast',
-        })
-      }
-    }
-
-    // Atualiza ref com IDs atuais para próxima comparação
-    previousOrderIdsRef.current = currentOrderIds
+        duration: 5000,
+        position: "top-right",
+        style: {
+          background: "hsl(var(--background))",
+          border: "2px solid hsl(var(--primary))",
+          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+          fontSize: "14px",
+          fontWeight: "600",
+        },
+        className: "notification-toast",
+      },
+    )
   }, [data?.data])
 
   // Timer effect
@@ -275,38 +283,39 @@ export default function KitchenManagementPage() {
   }
 
 
+  const sourceOrders = hasTextSearch
+    ? (searchResults ?? [])
+    : (data?.data ?? [])
+
   const filteredOrders =
-  data?.data &&
-  dedupeOrdersById(data.data)
+  (hasTextSearch || data?.data) &&
+  dedupeOrdersById(sourceOrders)
     .map((order) => ({
       ...order,
       atrasado: isOrderDelayed(order)
     }))
     .filter((order) => {
-      const search = searchQuery.toLowerCase().trim()
-      const matchesSearch = orderMatchesSearch(order, search)
+      // Na busca em texto, o filtro já veio de todas as páginas
+      const matchesSearch = hasTextSearch
+        ? true
+        : orderMatchesSearch(order, searchQuery.toLowerCase().trim())
 
       let matchesFilter = false
-      if (activeFilter === "all") {
+      if (isKanban || activeFilter === "all") {
         matchesFilter = true
       } else if (activeFilter === "preparoEmAtraso") {
         // A API já retorna somente atrasados quando este filtro está ativo
-        // Mantemos também a validação local por segurança
         matchesFilter = true
       } else {
-        // Garantir que o status do pedido corresponde exatamente ao filtro ativo
-        // Isso é crítico para evitar mostrar pedidos de outros status quando o filtro muda
         matchesFilter = order.status === activeFilter
       }
 
       return matchesSearch && matchesFilter
     })
     .sort((a, b) => {
-      // Primeiro, prioriza pedidos atrasados
       if (a.atrasado && !b.atrasado) return -1
       if (!a.atrasado && b.atrasado) return 1
 
-      // Depois, ordem de prioridade dos status - pedidos finalizados vão para o final
       const prioridade: Record<string, number> = {
         preparoAguardandoProducao: 1,
         preparoEmProducao: 2,
@@ -330,9 +339,9 @@ export default function KitchenManagementPage() {
     return <KitchenLoading message="Inicializando sistema..." />
   }
 
-  if (!data) {
+  if (isOrdersPending || !data) {
     return <KitchenLoading message="Carregando pedidos..." showSkeleton={true} />
-  }  
+  }
 
   const handleSearch = () => {
     setIsSearching(true)
@@ -413,7 +422,7 @@ export default function KitchenManagementPage() {
   }
 
   const handleItemsPerPageChange = (newItemsPerPage: number) => {
-    setItemsPerPage(newItemsPerPage)
+    setListItemsPerPage(newItemsPerPage)
     setCurrentPage(1)
   }
 
@@ -481,6 +490,8 @@ export default function KitchenManagementPage() {
               </>
             )}
           </Button>
+
+          <ViewModeToggle viewMode={viewMode} onViewModeChange={setViewMode} />
         </div>
 
         {/* Exibe hora atual e status da conexão */}
@@ -489,59 +500,71 @@ export default function KitchenManagementPage() {
           <div className="text-xs font-medium sm:text-sm">{formatDateTime(currentTime)}</div>
         </div>
       </div>
-        <div className="border-t px-4 py-3 sm:px-6">
-          <div className="overflow-x-auto">
-            <FilterBar activeFilter={activeFilter} onFilterChange={handleFilterChange} counts={filterCounts} />
+        {!isKanban && (
+          <div className="border-t px-4 py-3 sm:px-6">
+            <div className="overflow-x-auto">
+              <FilterBar activeFilter={activeFilter} onFilterChange={handleFilterChange} counts={filterCounts} />
+            </div>
           </div>
-        </div>
+        )}
       </header>
 
       {/* Orders Grid */}
       <main className="p-4 sm:p-6 relative">
-        {(isSearching || isFetching || isChangingPage) && (
+        {(isSearching || isChangingPage || (hasTextSearch && (isSearchDebouncing || isSearchFetching))) && (
           <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-10 flex items-center justify-center">
             <div className="bg-card p-6 rounded-lg shadow-lg border">
               <div className="flex items-center space-x-3">
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                <span className="text-sm font-medium">Carregando pedidos...</span>
+                <span className="text-sm font-medium">
+                  {hasTextSearch ? "Pesquisando em todas as páginas..." : "Carregando pedidos..."}
+                </span>
               </div>
             </div>
           </div>
         )}
         
-        <div className="grid grid-cols-1 gap-4 min-[640px]:grid-cols-2 min-[1024px]:grid-cols-3 min-[1280px]:grid-cols-4 min-[1536px]:grid-cols-5">
-          {filteredOrders && filteredOrders.length > 0 ? (
-            filteredOrders.map((order) => (
-              <OrderCard key={order.preparoProducaoId} order={order} />
-            ))
-          ) : (
-            <div className="col-span-full flex justify-center py-12">
-              <div className="text-center space-y-4">
-                <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center">
-                  <Search className="h-8 w-8 text-muted-foreground" />
+        {isKanban ? (
+          <OrdersKanbanBoard
+            orders={filteredOrders || []}
+            searchQuery={searchQuery}
+            onClearSearch={() => setSearchQuery("")}
+          />
+        ) : (
+          <div className="grid grid-cols-1 gap-4 min-[640px]:grid-cols-2 min-[1024px]:grid-cols-3 min-[1280px]:grid-cols-4 min-[1536px]:grid-cols-5">
+            {filteredOrders && filteredOrders.length > 0 ? (
+              filteredOrders.map((order) => (
+                <OrderCard key={order.preparoProducaoId} order={order} />
+              ))
+            ) : (
+              <div className="col-span-full flex justify-center py-12">
+                <div className="text-center space-y-4">
+                  <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center">
+                    <Search className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-lg font-semibold">Nenhum pedido encontrado</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {searchQuery ? 
+                        `Nenhum pedido encontrado para "${searchQuery}"` : 
+                        "Não há pedidos para exibir no momento"
+                      }
+                    </p>
+                  </div>
+                  {searchQuery && (
+                    <Button 
+                      variant="outline" 
+                      onClick={() => setSearchQuery("")}
+                      className="mt-4"
+                    >
+                      Limpar busca
+                    </Button>
+                  )}
                 </div>
-                <div className="space-y-2">
-                  <h3 className="text-lg font-semibold">Nenhum pedido encontrado</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {searchQuery ? 
-                      `Nenhum pedido encontrado para "${searchQuery}"` : 
-                      "Não há pedidos para exibir no momento"
-                    }
-                  </p>
-                </div>
-                {searchQuery && (
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setSearchQuery("")}
-                    className="mt-4"
-                  >
-                    Limpar busca
-                  </Button>
-                )}
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </main>
 
       {/* Footer */}
@@ -563,50 +586,62 @@ export default function KitchenManagementPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* Seletor de itens por página */}
-            <select
-              value={itemsPerPage}
-              onChange={(e) => handleItemsPerPageChange(Number(e.target.value))}
-              className="rounded border border-input bg-background px-2 py-1 text-xs"
-            >
-              <option value={10}>10 por página</option>
-              <option value={20}>20 por página</option>
-              <option value={50}>50 por página</option>
-              <option value={100}>100 por página</option>
-            </select>
+            {hasTextSearch ? (
+              <span className="text-xs sm:text-sm">
+                {isSearchDebouncing || isSearchFetching
+                  ? "Pesquisando..."
+                  : `${filteredOrders ? filteredOrders.length : 0} resultado(s) em todas as páginas`}
+              </span>
+            ) : isKanban ? (
+              <span className="text-xs sm:text-sm">
+                {filteredOrders ? filteredOrders.length : 0} pedido(s)
+              </span>
+            ) : (
+              <>
+                <select
+                  value={listItemsPerPage}
+                  onChange={(e) => handleItemsPerPageChange(Number(e.target.value))}
+                  className="rounded border border-input bg-background px-2 py-1 text-xs"
+                >
+                  <option value={10}>10 por página</option>
+                  <option value={20}>20 por página</option>
+                  <option value={50}>50 por página</option>
+                  <option value={100}>100 por página</option>
+                </select>
 
-            {/* Controles de paginação */}
-            <Button 
-              variant="outline" 
-              size="icon"
-              onClick={() => handlePageChange(currentPage - 1)}
-              disabled={!data?.pagination || currentPage <= 1 || isChangingPage}
-            >
-              {isChangingPage ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <span className="text-lg">↑</span>
-              )}
-            </Button>
-            <span className="text-xs sm:text-sm">
-              {isChangingPage ? (
-                "Carregando..."
-              ) : (
-                `Página ${data?.pagination?.currentPage || 1} de ${data?.pagination?.totalPages || 1}`
-              )}
-            </span>
-            <Button 
-              variant="outline" 
-              size="icon"
-              onClick={() => handlePageChange(currentPage + 1)}
-              disabled={!data?.pagination || currentPage >= (data.pagination.totalPages || 1) || isChangingPage}
-            >
-              {isChangingPage ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <span className="text-lg">↓</span>
-              )}
-            </Button>
+                <Button 
+                  variant="outline" 
+                  size="icon"
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={!data?.pagination || currentPage <= 1 || isChangingPage}
+                >
+                  {isChangingPage ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <span className="text-lg">↑</span>
+                  )}
+                </Button>
+                <span className="text-xs sm:text-sm">
+                  {isChangingPage ? (
+                    "Carregando..."
+                  ) : (
+                    `Página ${data?.pagination?.currentPage || 1} de ${data?.pagination?.totalPages || 1}`
+                  )}
+                </span>
+                <Button 
+                  variant="outline" 
+                  size="icon"
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={!data?.pagination || currentPage >= (data.pagination.totalPages || 1) || isChangingPage}
+                >
+                  {isChangingPage ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <span className="text-lg">↓</span>
+                  )}
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </footer>
