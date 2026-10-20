@@ -12,6 +12,8 @@ export default defineConfig({
   },
   server: {
     port: 7301,
+    // Permite acesso via túnel (Cloudflare / ngrok) sem listar cada hostname
+    allowedHosts: true,
   },
   preview: {
     port: 7301,

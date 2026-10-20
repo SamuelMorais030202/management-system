@@ -21,6 +21,7 @@ import { WebSocketStatus } from "@/components/websocket-status"
 import { toast } from "sonner"
 import { playNotificationSound, initAudioContext } from "@/utils/sound"
 import { dedupeOrdersById, orderMatchesSearch } from "@/utils/orderSearch"
+import { cn } from "@/lib/utils"
 
 const KANBAN_ITEMS_PER_PAGE = 100
 
@@ -439,9 +440,12 @@ export default function KitchenManagementPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background pb-24">
+    <div className={cn(
+      "bg-background",
+      isKanban ? "flex h-svh flex-col overflow-hidden pb-[4.5rem]" : "min-h-screen pb-24",
+    )}>
       {/* Header */}
-      <header className="border-b bg-card">
+      <header className="shrink-0 border-b bg-card">
       <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
           {/* Campo de busca por texto */}
@@ -510,7 +514,10 @@ export default function KitchenManagementPage() {
       </header>
 
       {/* Orders Grid */}
-      <main className="p-4 sm:p-6 relative">
+      <main className={cn(
+        "relative",
+        isKanban ? "min-h-0 flex-1 p-2 sm:p-3" : "p-4 sm:p-6",
+      )}>
         {(isSearching || isChangingPage || (hasTextSearch && (isSearchDebouncing || isSearchFetching))) && (
           <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-10 flex items-center justify-center">
             <div className="bg-card p-6 rounded-lg shadow-lg border">
@@ -525,11 +532,13 @@ export default function KitchenManagementPage() {
         )}
         
         {isKanban ? (
-          <OrdersKanbanBoard
-            orders={filteredOrders || []}
-            searchQuery={searchQuery}
-            onClearSearch={() => setSearchQuery("")}
-          />
+          <div className="h-full min-h-0">
+            <OrdersKanbanBoard
+              orders={filteredOrders || []}
+              searchQuery={searchQuery}
+              onClearSearch={() => setSearchQuery("")}
+            />
+          </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 min-[640px]:grid-cols-2 min-[1024px]:grid-cols-3 min-[1280px]:grid-cols-4 min-[1536px]:grid-cols-5">
             {filteredOrders && filteredOrders.length > 0 ? (

@@ -21,9 +21,12 @@ interface OrderCardProps {
   className?: string
   /** Loading externo (ex.: drag-and-drop no Kanban) */
   isUpdating?: boolean
+  /** Layout denso para colunas do Kanban */
+  compact?: boolean
 }
 
 const MAX_ITEMS_DISPLAY = 3
+const MAX_ITEMS_COMPACT = 2
 
 export const statusConfig = {
   preparoCancelado: { bg: "bg-[#DC2626]", text: "text-white", label: "CANCELADO" },
@@ -50,7 +53,7 @@ const delayedButtonColorConfig: Record<string, string> = {
   preparoFinalizado: "bg-[#10B981] hover:bg-[#059669] text-white", // Verde para finalizados (não muda)
 }
 
-export function OrderCard({ order, className, isUpdating = false }: OrderCardProps) {
+export function OrderCard({ order, className, isUpdating = false, compact = false }: OrderCardProps) {
   const params = useParams()
   const empresaId = params.id?.toString()
 
@@ -217,8 +220,10 @@ export function OrderCard({ order, className, isUpdating = false }: OrderCardPro
   }
 
   const config = statusConfig[currentStatus]
-  const hasMoreItems = order.items.length > MAX_ITEMS_DISPLAY
-  const displayItems = hasMoreItems ? order.items.slice(0, MAX_ITEMS_DISPLAY) : order.items
+  const maxItems = compact ? MAX_ITEMS_COMPACT : MAX_ITEMS_DISPLAY
+  const hasMoreItems = order.items.length > maxItems
+  const displayItems = hasMoreItems ? order.items.slice(0, maxItems) : order.items
+  const MAX_OBSERVACAO_GERAL_COMPACT = 60
 
   // Determina a cor do botão baseado no status e se está atrasado
   const getButtonColor = () => {
@@ -238,8 +243,8 @@ export function OrderCard({ order, className, isUpdating = false }: OrderCardPro
   }
 
   // Limites de caracteres (ajustáveis por responsividade)
-  const MAX_OBSERVACAO_GERAL_LENGTH = 120 // ~2 linhas em mobile
-  const MAX_OBSERVACAO_ITEM_LENGTH = 80 // ~1.5 linhas em mobile
+  const MAX_OBSERVACAO_GERAL_LENGTH = compact ? MAX_OBSERVACAO_GERAL_COMPACT : 120
+  const MAX_OBSERVACAO_ITEM_LENGTH = 80
 
   const observacaoGeralTruncated = order.observacao 
     ? truncateText(order.observacao, MAX_OBSERVACAO_GERAL_LENGTH)
@@ -298,46 +303,78 @@ export function OrderCard({ order, className, isUpdating = false }: OrderCardPro
         )}
 
         {/* Header */}
-        <div className="flex flex-col gap-2 border-b p-3 sm:flex-row sm:items-start sm:justify-between sm:p-4">
-          <div className="flex-1 min-w-0 flex flex-col gap-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className="text-sm font-bold text-blue-600 cursor-pointer hover:underline hover:opacity-80 transition"
-                onClick={() => setShowDetailsModal(true)}
-              >
-                #{order.preparoProducaoId}
-              </span>
-            </div>
-            <span className="truncate text-sm text-muted-foreground">Garçom: {order.garcom || "Não informado"}</span>
-            <span className="truncate text-sm text-muted-foreground">Cliente: {order.clienteNome || "Não informado"}</span>
-            <span className="truncate text-sm text-muted-foreground">Mesa: {order.mesaNumero || "Não informado"}</span>
-          </div>
-          <div className="flex items-center justify-between gap-2 sm:flex-col sm:items-end sm:text-right">
-            {timeAgo && (
-              <div className="text-xs text-muted-foreground sm:text-right">
-                {timeAgo}
+        {compact ? (
+          <div className="flex items-start justify-between gap-2 border-b px-2.5 py-2">
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="text-sm font-bold text-blue-600 cursor-pointer hover:underline"
+                  onClick={() => setShowDetailsModal(true)}
+                >
+                  #{order.preparoProducaoId}
+                </span>
+                {order.atrasado && currentStatus !== "preparoFinalizado" && (
+                  <span className="rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                    ATRASO
+                  </span>
+                )}
               </div>
-            )}
-            <div className="text-xs font-medium">~ {order.tempoPreparo} min</div>
-            <div className={cn("inline-block rounded px-2 py-0.5 text-xs font-bold", config.bg, config.text)}>
+              <p className="truncate text-xs text-muted-foreground">
+                Mesa {order.mesaNumero || "—"} · {order.clienteNome || "Sem cliente"}
+              </p>
+              <p className="truncate text-[11px] text-muted-foreground">
+                {order.garcom || "Garçom —"} · ~{order.tempoPreparo} min
+                {timeAgo ? ` · ${timeAgo}` : ""}
+              </p>
+            </div>
+            <div className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold", config.bg, config.text)}>
               {config.label}
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex flex-col gap-2 border-b p-3 sm:flex-row sm:items-start sm:justify-between sm:p-4">
+            <div className="flex-1 min-w-0 flex flex-col gap-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className="text-sm font-bold text-blue-600 cursor-pointer hover:underline hover:opacity-80 transition"
+                  onClick={() => setShowDetailsModal(true)}
+                >
+                  #{order.preparoProducaoId}
+                </span>
+              </div>
+              <span className="truncate text-sm text-muted-foreground">Garçom: {order.garcom || "Não informado"}</span>
+              <span className="truncate text-sm text-muted-foreground">Cliente: {order.clienteNome || "Não informado"}</span>
+              <span className="truncate text-sm text-muted-foreground">Mesa: {order.mesaNumero || "Não informado"}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2 sm:flex-col sm:items-end sm:text-right">
+              {timeAgo && (
+                <div className="text-xs text-muted-foreground sm:text-right">
+                  {timeAgo}
+                </div>
+              )}
+              <div className="text-xs font-medium">~ {order.tempoPreparo} min</div>
+              <div className={cn("inline-block rounded px-2 py-0.5 text-xs font-bold", config.bg, config.text)}>
+                {config.label}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Barra de Progresso */}
         {(currentStatus === "preparoEmProducao" || currentStatus === "preparoPausado") && order.tempoPreparo > 0 && (
-          <div className="border-b px-3 py-2 sm:px-4 sm:py-2.5">
-            <div className="flex items-center justify-between gap-2 mb-1.5">
-              <span className="text-xs font-medium text-muted-foreground">Progresso</span>
+          <div className={cn("border-b", compact ? "px-2.5 py-1.5" : "px-3 py-2 sm:px-4 sm:py-2.5")}>
+            <div className={cn("flex items-center justify-between gap-2", compact ? "mb-1" : "mb-1.5")}>
+              <span className="text-[11px] font-medium text-muted-foreground">
+                {compact ? (isOverdue ? "Atrasado" : "Progresso") : "Progresso"}
+              </span>
               <span className={cn(
-                "text-xs font-medium",
+                "text-[11px] font-medium",
                 isOverdue ? "text-red-600 dark:text-red-500" : "text-muted-foreground"
               )}>
-                {isOverdue ? `${Math.floor(progress)}%` : `${Math.floor(progress)}%`}
+                {Math.floor(progress)}%
               </span>
             </div>
-            <div className="relative h-2 w-full overflow-hidden rounded-full bg-muted">
+            <div className={cn("relative w-full overflow-hidden rounded-full bg-muted", compact ? "h-1.5" : "h-2")}>
               <div
                 className={cn(
                   "h-full transition-all duration-300 ease-out",
@@ -352,8 +389,7 @@ export function OrderCard({ order, className, isUpdating = false }: OrderCardPro
                 style={{ width: `${Math.min(100, progress)}%` }}
               />
             </div>
-            {/* Mensagem de atraso */}
-            {isOverdue && (
+            {!compact && isOverdue && (
               <div className="mt-2.5 rounded-md bg-red-50 border border-red-200 p-2 dark:bg-red-950/30 dark:border-red-800">
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4 text-red-600 dark:text-red-400 flex-shrink-0" />
@@ -373,32 +409,40 @@ export function OrderCard({ order, className, isUpdating = false }: OrderCardPro
 
         {/* Observação Geral do Pedido */}
         {order.observacao && (
-          <div className="mx-3 mb-2 sm:mx-4 sm:mb-3">
-            <div className="rounded-md bg-amber-50 border border-amber-200 p-2.5 sm:p-3 dark:bg-amber-950/30 dark:border-amber-800">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500 flex-shrink-0 mt-0.5 sm:h-5 sm:w-5" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="text-xs font-semibold text-amber-900 dark:text-amber-100 sm:text-sm">
-                      Observação Geral
+          <div className={cn(compact ? "mx-2 mb-1.5 mt-1.5" : "mx-3 mb-2 sm:mx-4 sm:mb-3")}>
+            <div className={cn(
+              "rounded-md bg-amber-50 border border-amber-200 dark:bg-amber-950/30 dark:border-amber-800",
+              compact ? "px-2 py-1.5" : "p-2.5 sm:p-3",
+            )}>
+              <div className="flex items-start gap-1.5">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-500" />
+                <div className="min-w-0 flex-1">
+                  {!compact && (
+                    <div className="mb-1 flex items-center justify-between">
+                      <div className="text-xs font-semibold text-amber-900 dark:text-amber-100 sm:text-sm">
+                        Observação Geral
+                      </div>
+                      {observacaoGeralTruncated?.isTruncated && (
+                        <button
+                          onClick={() => setShowDetailsModal(true)}
+                          className="text-xs font-medium text-amber-700 underline hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
+                        >
+                          Ver mais
+                        </button>
+                      )}
                     </div>
-                    {observacaoGeralTruncated?.isTruncated && (
-                      <button
-                        onClick={() => setShowDetailsModal(true)}
-                        className="text-xs text-amber-700 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200 underline font-medium"
-                      >
-                        Ver mais
-                      </button>
+                  )}
+                  <p
+                    className={cn(
+                      "cursor-pointer break-words text-amber-800 dark:text-amber-200 hover:opacity-80",
+                      compact ? "line-clamp-2 text-[11px] leading-snug" : "text-xs leading-relaxed sm:text-sm",
                     )}
-                  </div>
-                  <p 
-                    className="text-xs break-words text-amber-800 dark:text-amber-200 sm:text-sm leading-relaxed overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
                     onClick={() => {
                       if (order.observacao) {
                         setSelectedObservation({
                           text: order.observacao,
                           type: "general",
-                          title: `Observação Geral - Pedido #${order.preparoProducaoId}`
+                          title: `Observação Geral - Pedido #${order.preparoProducaoId}`,
                         })
                         setShowObservationModal(true)
                       }
@@ -413,36 +457,39 @@ export function OrderCard({ order, className, isUpdating = false }: OrderCardPro
         )}
 
         {/* Items */}
-        <div className="flex-1 space-y-2 p-3 sm:space-y-3 sm:p-4">
+        <div className={cn(
+          "flex-1",
+          compact ? "space-y-1 px-2.5 py-2" : "space-y-2 p-3 sm:space-y-3 sm:p-4",
+        )}>
           {displayItems.map((item, index) => (
-            <div key={index} className="text-sm">
+            <div key={index} className={compact ? "text-xs" : "text-sm"}>
               <div className="break-words font-medium">
                 {item.qtde} {item.nome}
               </div>
               {item.adicionais && item.adicionais.length > 0 && (
-                <div className="ml-3 mt-1 space-y-0.5 sm:ml-4">
+                <div className={cn("mt-0.5 space-y-0.5 text-muted-foreground", compact ? "ml-2 text-[11px]" : "ml-3 text-xs sm:ml-4")}>
                   {item.adicionais.map((modifier, modIndex) => (
-                    <div key={modIndex} className="break-words text-xs text-muted-foreground">
+                    <div key={modIndex} className="break-words">
                       {item.qtde} {modifier.nome}
                     </div>
                   ))}
                 </div>
               )}
-              {item.observacao && (() => {
+              {!compact && item.observacao && (() => {
                 const observacaoItemTruncated = truncateText(item.observacao, MAX_OBSERVACAO_ITEM_LENGTH)
                 return (
                   <div className="mt-1.5 sm:mt-2 ml-0 sm:ml-2">
-                    <div className="inline-flex items-start gap-1.5 rounded-md bg-blue-50 border border-blue-200 px-2 py-1.5 sm:px-2.5 sm:py-2 dark:bg-blue-950/30 dark:border-blue-800 max-w-full">
-                      <FileText className="h-3 w-3 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5 sm:h-3.5 sm:w-3.5" />
-                      <div className="flex-1 min-w-0">
-                        <p 
-                          className="text-xs break-words text-blue-800 dark:text-blue-200 leading-relaxed sm:text-xs overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                    <div className="inline-flex max-w-full items-start gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-2 py-1.5 dark:border-blue-800 dark:bg-blue-950/30 sm:px-2.5 sm:py-2">
+                      <FileText className="mt-0.5 h-3 w-3 shrink-0 text-blue-600 dark:text-blue-400 sm:h-3.5 sm:w-3.5" />
+                      <div className="min-w-0 flex-1">
+                        <p
+                          className="cursor-pointer overflow-hidden break-words text-xs leading-relaxed text-blue-800 hover:opacity-80 dark:text-blue-200"
                           onClick={() => {
                             if (item.observacao) {
                               setSelectedObservation({
                                 text: item.observacao,
                                 type: "item",
-                                title: `Observação do Item - ${item.qtde}x ${item.nome}`
+                                title: `Observação do Item - ${item.qtde}x ${item.nome}`,
                               })
                               setShowObservationModal(true)
                             }
@@ -458,12 +505,12 @@ export function OrderCard({ order, className, isUpdating = false }: OrderCardPro
                                 setSelectedObservation({
                                   text: item.observacao,
                                   type: "item",
-                                  title: `Observação do Item - ${item.qtde}x ${item.nome}`
+                                  title: `Observação do Item - ${item.qtde}x ${item.nome}`,
                                 })
                                 setShowObservationModal(true)
                               }
                             }}
-                            className="text-xs text-blue-700 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-200 underline font-medium mt-0.5"
+                            className="mt-0.5 text-xs font-medium text-blue-700 underline hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-200"
                           >
                             Ver mais
                           </button>
@@ -481,24 +528,30 @@ export function OrderCard({ order, className, isUpdating = false }: OrderCardPro
               variant="ghost"
               size="sm"
               onClick={() => setShowDetailsModal(true)}
-              className="w-full text-xs text-muted-foreground hover:text-foreground"
+              className={cn(
+                "w-full text-muted-foreground hover:text-foreground",
+                compact ? "h-7 text-[11px]" : "text-xs",
+              )}
             >
               <ChevronDown className="mr-1 h-3 w-3" />
-              Ver mais {order.items.length - MAX_ITEMS_DISPLAY}{" "}
-              {order.items.length - MAX_ITEMS_DISPLAY === 1 ? "item" : "itens"}
+              +{order.items.length - maxItems} {order.items.length - maxItems === 1 ? "item" : "itens"}
             </Button>
           )}
         </div>
 
         {/* Footer */}
-        <div className="border-t p-1.5 sm:p-3">
+        <div className={cn("border-t", compact ? "p-1.5" : "p-1.5 sm:p-3")}>
           <div className="flex items-center gap-1 sm:gap-2">
             {currentStatus === "preparoEmProducao" ? (
               <>
                 <Button
                   onClick={handleFinishCooking}
                   disabled={isBusy}
-                  className={cn("flex-1 min-w-0 text-[10px] text-white sm:text-sm", getButtonColor())}
+                  className={cn(
+                    "min-w-0 flex-1 text-white",
+                    compact ? "h-8 text-[11px]" : "text-[10px] sm:text-sm",
+                    getButtonColor(),
+                  )}
                   size="sm"
                 >
                   FINALIZAR <span className="ml-1 font-mono text-[10px]">{timer}</span>
@@ -509,7 +562,7 @@ export function OrderCard({ order, className, isUpdating = false }: OrderCardPro
                   disabled={isBusy}
                   variant="outline"
                   size="icon"
-                  className="h-7 w-7 shrink-0 bg-transparent sm:h-9 sm:w-9"
+                  className={cn("shrink-0 bg-transparent", compact ? "h-8 w-8" : "h-7 w-7 sm:h-9 sm:w-9")}
                   title="Pausar Preparo"
                 >
                   <Pause className="h-3 w-3 sm:h-4 sm:w-4" />
@@ -519,7 +572,11 @@ export function OrderCard({ order, className, isUpdating = false }: OrderCardPro
               <Button
                 onClick={handleResumeCooking}
                 disabled={isBusy}
-                className={cn("flex-1 min-w-0 text-[10px] text-white sm:text-sm", getButtonColor())}
+                className={cn(
+                  "min-w-0 flex-1 text-white",
+                  compact ? "h-8 text-[11px]" : "text-[10px] sm:text-sm",
+                  getButtonColor(),
+                )}
                 size="sm"
               >
                 <Play className="mr-1 h-3 w-3" /> VOLTAR <span className="ml-1 font-mono text-[10px]">{timer}</span>
@@ -527,7 +584,11 @@ export function OrderCard({ order, className, isUpdating = false }: OrderCardPro
             ) : currentStatus === "preparoFinalizado" ? (
               <Button
                 disabled
-                className={cn("flex-1 min-w-0 text-[10px] text-white sm:text-sm opacity-80 cursor-not-allowed", getButtonColor())}
+                className={cn(
+                  "min-w-0 flex-1 cursor-not-allowed text-white opacity-80",
+                  compact ? "h-8 text-[11px]" : "text-[10px] sm:text-sm",
+                  getButtonColor(),
+                )}
                 size="sm"
                 title="Pedido finalizado"
               >
@@ -537,7 +598,11 @@ export function OrderCard({ order, className, isUpdating = false }: OrderCardPro
               <Button
                 onClick={handleStartCooking}
                 disabled={isBusy}
-                className={cn("flex-1 min-w-0 text-[10px] text-white sm:text-sm", getButtonColor())}
+                className={cn(
+                  "min-w-0 flex-1 text-white",
+                  compact ? "h-8 text-[11px]" : "text-[10px] sm:text-sm",
+                  getButtonColor(),
+                )}
                 size="sm"
               >
                 INICIAR <span className="ml-1 font-mono text-[10px]">{timer}</span>
@@ -547,7 +612,10 @@ export function OrderCard({ order, className, isUpdating = false }: OrderCardPro
             <Button
               variant="outline"
               size="icon"
-              className="h-7 w-7 shrink-0 bg-transparent sm:h-9 sm:w-9 cursor-pointer"
+              className={cn(
+                "shrink-0 cursor-pointer bg-transparent",
+                compact ? "h-8 w-8" : "h-7 w-7 sm:h-9 sm:w-9",
+              )}
               onClick={() => handlePrintOrder(order)}
               disabled={isBusy}
               title="Imprimir Pedido"
